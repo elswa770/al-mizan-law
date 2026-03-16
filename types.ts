@@ -53,13 +53,29 @@ export interface Role {
   isSystem?: boolean;
 }
 
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: number;
+  currency: string;
+  billingCycle: 'monthly' | 'yearly';
+  features: string[];
+  maxUsers: number;
+  maxCases: number;
+  maxClients: number;
+  maxStorageGB: number;
+  isActive: boolean;
+}
+
 export interface Firm {
   id: string;
   name: string;
   logo?: string;
   subscriptionStatus: 'active' | 'inactive' | 'trial';
-  subscriptionPlan: 'basic' | 'pro' | 'enterprise';
+  subscriptionPlan: string;
   subscriptionEndDate?: string;
+  trialStartDate?: string;
+  trialEndDate?: string;
   createdAt: string;
 }
 
@@ -314,7 +330,6 @@ export interface Hearing {
   clientRequirements?: string;
   isCompleted?: boolean;
   rulingUrl?: string;
-  rulingFiles?: Array<{name: string, url: string, driveId?: string}>; // Multiple files support
   expenses?: HearingExpenses;
 }
 

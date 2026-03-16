@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { db } from '../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { AppUser, PermissionLevel, Case, Client, Hearing, Task, LegalReference, NotificationSettings, SMTPSettings, WhatsAppSettings, AlertPreferences, SecuritySettings, LoginAttempt, ActiveSession, DataManagementSettings, SystemHealth, SystemError, ResourceUsage, MaintenanceSettings, Role } from '../types';
+import { SubscriptionService } from '../src/services/subscriptionService';
 import { 
   Settings as SettingsIcon, Users, Lock, Shield, 
   Plus, Edit3, Trash2, Check, X, Eye, 
@@ -33,6 +34,7 @@ interface SettingsProps {
   onRestoreData?: (data: any) => void; 
   readOnly?: boolean;
   firmId?: string;
+  currentUser?: any;
 }
 
 // Complete list of modules for permission assignment
@@ -63,7 +65,7 @@ const Settings: React.FC<SettingsProps> = ({
   roles = [], onAddRole, onUpdateRole, onDeleteRole,
   currentTheme = 'light', onThemeChange,
   cases = [], clients = [], hearings = [], tasks = [], references = [],
-  onRestoreData, readOnly = false, firmId = 'default'
+  onRestoreData, readOnly = false, firmId = 'default', currentUser = null
 }) => {
   const [activeTab, setActiveTab] = useState<'general' | 'users' | 'roles' | 'security' | 'notifications' | 'data' | 'maintenance'>('general');
   const [isSaving, setIsSaving] = useState(false);
@@ -1185,36 +1187,58 @@ const Settings: React.FC<SettingsProps> = ({
     setFormData({ ...formData, permissions: updatedPermissions });
   };
 
-  const handleSaveUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name || !formData.email) return;
-
-    if (!editingUser && !formData.password) {
-      alert('يرجى تعيين كلمة مرور للمستخدم الجديد');
+  const saveUser = async () => {
+    if (!formData.name || !formData.email) {
+      alert('يرجى ملء جميع الحقول المطلوبة');
       return;
     }
 
-    if (editingUser && onUpdateUser) {
-      const updatedUser = { ...editingUser, ...formData };
-      if (!formData.password) {
-         updatedUser.password = editingUser.password;
+    try {
+      // Check subscription limits before adding user (only for new users)
+      if (!editingUser) {
+        if (currentUser?.firmId) {
+          const userCheck = await SubscriptionService.canAddUser(currentUser.firmId, currentUser.email);
+          
+          if (!userCheck.canAdd) {
+            console.log('❌ Cannot add user - limit reached:', userCheck.message);
+            alert(userCheck.message);
+            return;
+          } else {
+            console.log('✅ Can add user:', userCheck.message);
+          }
+        }
       }
-      onUpdateUser(updatedUser as AppUser);
-    } else if (onAddUser) {
-      const newUser: AppUser = {
-        id: Math.random().toString(36).substring(2, 9),
-        name: formData.name!,
-        email: formData.email!,
-        username: formData.username,
-        password: formData.password,
-        roleLabel: formData.roleLabel || 'موظف',
-        isActive: formData.isActive || true,
-        permissions: formData.permissions || [],
-        avatar: undefined
-      };
-      onAddUser(newUser);
+
+      if (editingUser) {
+        const updatedUser = {
+          ...editingUser,
+          ...formData,
+          updatedAt: new Date().toISOString()
+        };
+        if (formData.password) {
+          updatedUser.password = editingUser.password;
+        }
+        onUpdateUser(updatedUser as AppUser);
+      } else if (onAddUser) {
+        const newUser: AppUser = {
+          id: Math.random().toString(36).substring(2, 9),
+          name: formData.name!,
+          email: formData.email!,
+          username: formData.username,
+          password: formData.password,
+          roleLabel: formData.roleLabel || 'موظف',
+          isActive: formData.isActive || true,
+          permissions: formData.permissions || [],
+          avatar: undefined,
+          firmId: firmId
+        };
+        onAddUser(newUser);
+      }
+      setIsUserModalOpen(false);
+    } catch (error) {
+      console.error('Error saving user:', error);
+      alert('حدث خطأ أثناء حفظ المستخدم');
     }
-    setIsUserModalOpen(false);
   };
 
   // --- Handlers: General Settings ---
@@ -2029,7 +2053,7 @@ const Settings: React.FC<SettingsProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveUser} className="flex-1 overflow-y-auto p-6 space-y-8">
+            <form onSubmit={saveUser} className="flex-1 overflow-y-auto p-6 space-y-8">
               
               {/* Basic Info Section */}
               <div className="space-y-4">
@@ -2232,7 +2256,7 @@ const Settings: React.FC<SettingsProps> = ({
               </button>
               {!readOnly && (
                 <button 
-                  onClick={handleSaveUser}
+                  onClick={saveUser}
                   className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 shadow-md shadow-indigo-200 dark:shadow-none flex items-center gap-2 transition-colors"
                 >
                   <Save className="w-4 h-4" /> حفظ المستخدم

@@ -39,12 +39,68 @@ const PageLoader = () => (
     </div>
   </div>
 );
-import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
-import { db, secondaryAuth, createUserWithEmailAndPassword } from './firebase';
+
+import { 
+  doc, 
+  getDoc, 
+  collection, 
+  getDocs, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot, 
+  addDoc, 
+  serverTimestamp 
+} from 'firebase/firestore';
+import { 
+  signInWithPopup, 
+  signOut as firebaseSignOut,
+  GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  updateProfile,
+  updateEmail,
+  updatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider
+} from 'firebase/auth';
+import { auth, db } from './firebase';
+
+// Initialize secondary auth instance for user creation
+const secondaryAuth = auth;
+import { Shield, AlertTriangle, User, Settings as SettingsIcon, FileText, Calendar, Users, CreditCard, Phone, Mail, Lock, Eye, EyeOff, ChevronDown, ChevronUp, Plus, Search, Filter, X, Edit2, Trash2, Save, Upload, Download, Clock, CheckCircle, AlertCircle, Home, Briefcase, Building, UserCheck, Archive, Bell, Menu, LogOut, UserPlus, ShieldAlert, ArrowRight } from 'lucide-react';
+import { 
+  AppUser, 
+  Case, 
+  Client, 
+  Hearing, 
+  HearingStatus,
+  Task, 
+  Lawyer, 
+  Appointment, 
+  ActivityLog, 
+  Role, 
+  LegalReference,
+  NotificationSettings, 
+  SMTPSettings, 
+  WhatsAppSettings, 
+  AlertPreferences, 
+  SecuritySettings, 
+  LoginAttempt, 
+  ActiveSession, 
+  DataManagementSettings, 
+  SystemHealth, 
+  SystemError, 
+  ResourceUsage, 
+  MaintenanceSettings 
+} from './types';
+import { SubscriptionService } from './src/services/subscriptionService';
 import { googleDriveService } from './src/services/googleDriveService';
 import { MOCK_ROLES } from './services/mockData';
-import { Hearing, Case, Client, HearingStatus, Task, ActivityLog, AppUser, PermissionLevel, LegalReference, Lawyer, Role, Appointment } from './types';
-import { ShieldAlert } from 'lucide-react';
 
 const sanitizeData = (obj: any): any => {
   if (obj === null || obj === undefined) return obj;
@@ -90,6 +146,43 @@ function AppContent() {
           console.error("Failed to parse settings", e);
         }
       }
+      
+      // Check if firm has trial subscription (skip for super admin)
+      const checkTrialSubscription = async () => {
+        // Skip subscription checks for super admin
+        if (currentUser?.email?.toLowerCase() === 'elswa770@gmail.com') {
+          console.log('👑 Super admin detected - skipping subscription checks');
+          return;
+        }
+        
+        try {
+          const firmDoc = await getDoc(doc(db, 'firms', currentUser.firmId));
+          if (firmDoc.exists()) {
+            const firmData = firmDoc.data();
+            console.log('🏢 Firm data on login:', firmData);
+            
+            // If firm has no subscription plan, create trial subscription
+            if (!firmData.subscriptionPlan || firmData.subscriptionPlan === '') {
+              console.log('🎯 No subscription plan found, creating trial subscription...');
+              await SubscriptionService.createTrialSubscription(currentUser.firmId);
+              console.log('✅ Trial subscription created successfully');
+            } else if (firmData.subscriptionStatus === 'trial') {
+              // Check if trial has expired
+              const trialStatus = await SubscriptionService.checkTrialStatus(currentUser.firmId);
+              if (trialStatus.isExpired) {
+                console.log('⏰ Trial has expired:', trialStatus.message);
+                // You might want to show a modal or redirect to subscription page
+              } else {
+                console.log('✅ Trial is active:', trialStatus.message);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error checking trial subscription:', error);
+        }
+      };
+      
+      checkTrialSubscription();
     }
   }, [currentUser?.firmId]);
 
@@ -365,24 +458,24 @@ function AppContent() {
     return <Login />;
   }
 
-  if (isAuthenticated && !currentUser) {
+  if (isAuthenticated && (!currentUser || !currentUser.firmId || currentUser.firmId === '')) {
     return <Onboarding />;
   }
 
   // Check subscription status
-  const isSuperAdmin = currentUser?.email === 'elswa770@gmail.com';
-  const isSubscriptionExpired = currentFirm && (
+  const isSuperAdmin = currentUser?.email?.toLowerCase() === 'elswa770@gmail.com';
+  const isSubscriptionExpired = currentFirm && !isSuperAdmin && (
     currentFirm.subscriptionStatus === 'inactive' || 
     (currentFirm.subscriptionEndDate && new Date(currentFirm.subscriptionEndDate) < new Date())
   );
 
   // Force redirect to subscription page if expired, unless they are super admin
-  if (isSubscriptionExpired && !isSuperAdmin && currentPage !== 'subscription') {
+  if (isSubscriptionExpired && currentPage !== 'subscription') {
     setCurrentPage('subscription');
   }
 
   // --- Permission Helpers ---
-  const getPermission = (moduleId: string): PermissionLevel => {
+  const getPermission = (moduleId: string): 'none' | 'read' | 'write' => {
     if (!currentUser) return 'none';
     const perm = currentUser.permissions.find(p => p.moduleId === moduleId);
     return perm ? perm.access : 'none';
@@ -461,9 +554,8 @@ function AppContent() {
   };
 
   const handleAddHearing = async (newHearing: Hearing) => {
-    if (!currentUser?.firmId) return;
     const docRef = doc(collection(db, 'hearings'));
-    await setDoc(docRef, sanitizeData({ ...newHearing, id: docRef.id, firmId: currentUser.firmId }));
+    await setDoc(docRef, sanitizeData({ ...newHearing, id: docRef.id, firmId: currentUser?.firmId || 'default' }));
   };
 
   const handleUpdateHearing = async (updatedHearing: Hearing) => {
@@ -578,6 +670,18 @@ function AppContent() {
         // If no password, we still need a unique ID for Firestore
         const docRef = doc(collection(db, 'users'));
         uid = docRef.id;
+        
+        // Create the user document immediately to reserve the ID
+        await setDoc(docRef, {
+          id: uid,
+          email: newUser.email,
+          name: newUser.name,
+          firmId: currentUser.firmId,
+          createdAt: new Date().toISOString(),
+          isActive: newUser.isActive || true,
+          roleLabel: newUser.roleLabel || 'موظف',
+          permissions: newUser.permissions || []
+        });
       }
 
       // Save to Firestore using the generated UID or the Auth UID
@@ -585,7 +689,11 @@ function AppContent() {
       // Remove password before saving to Firestore for security
       delete userToSave.password;
       
+      // Save to both main collection and subcollection for consistency
       await setDoc(doc(db, 'users', uid), sanitizeData(userToSave));
+      await setDoc(doc(db, 'firms', currentUser.firmId, 'users', uid), sanitizeData(userToSave));
+      
+      console.log('✅ User added to both collections:', uid);
       alert('تم إضافة المستخدم بنجاح');
     } catch (error: any) {
       console.error('Error adding user:', error);
@@ -595,10 +703,28 @@ function AppContent() {
 
   const handleUpdateUser = async (updatedUser: AppUser) => {
     await updateDoc(doc(db, 'users', updatedUser.id), sanitizeData({ ...updatedUser }));
+    // Also update in subcollection if it exists
+    if (updatedUser.firmId) {
+      try {
+        await updateDoc(doc(db, 'firms', updatedUser.firmId, 'users', updatedUser.id), sanitizeData({ ...updatedUser }));
+      } catch (error) {
+        // Subcollection might not exist, that's okay
+        console.log('Subcollection update skipped:', error);
+      }
+    }
   };
 
   const handleDeleteUser = async (userId: string) => {
     await deleteDoc(doc(db, 'users', userId));
+    // Also delete from subcollection if it exists
+    if (currentUser?.firmId) {
+      try {
+        await deleteDoc(doc(db, 'firms', currentUser.firmId, 'users', userId));
+      } catch (error) {
+        // Subcollection might not exist, that's okay
+        console.log('Subcollection delete skipped:', error);
+      }
+    }
   };
 
   const handleAddReference = async (newRef: LegalReference) => {
@@ -631,6 +757,8 @@ function AppContent() {
         hearings={hearings} 
         tasks={tasks}
         currentUser={currentUser}
+        onUpdateHearing={handleUpdateHearing}
+        onAddHearing={handleAddHearing}
       />;
     }
 
@@ -798,6 +926,7 @@ function AppContent() {
       case 'settings':
         return <Settings 
           firmId={currentUser?.firmId}
+          currentUser={currentUser}
           users={users}
           onAddUser={handleAddUser}
           onUpdateUser={handleUpdateUser}
@@ -823,7 +952,7 @@ function AppContent() {
           readOnly={isReadOnly('references')}
         />;
       case 'case-details':
-        if (!selectedCaseId) return <Dashboard cases={cases} clients={clients} hearings={hearings} />;
+        if (!selectedCaseId) return <Dashboard cases={cases} clients={clients} hearings={hearings} onUpdateHearing={handleUpdateHearing} onAddHearing={handleAddHearing} />;
         return <CaseDetails 
           caseId={selectedCaseId} 
           cases={cases} 
@@ -838,7 +967,7 @@ function AppContent() {
           readOnly={isReadOnly('cases')}
         />;
       case 'client-details':
-        if (!selectedClientId) return <Clients clients={clients} cases={cases} hearings={hearings} currentUser={currentUser} onClientClick={handleClientClick} />;
+        if (!selectedClientId) return <Clients clients={clients} cases={cases} hearings={hearings} currentUser={currentUser} onClientClick={handleClientClick} onAddClient={handleAddClient} onAddClientLocal={handleAddClientLocal} onUpdateClient={handleUpdateClient} readOnly={isReadOnly('clients')} />;
         return <ClientDetails 
           clientId={selectedClientId} 
           clients={clients} 
@@ -860,7 +989,13 @@ function AppContent() {
           onUpdateLawyer={handleUpdateLawyer}
         />;
       default:
-        return <Dashboard cases={cases} clients={clients} hearings={hearings} />;
+        return <Dashboard 
+          cases={cases} 
+          clients={clients} 
+          hearings={hearings} 
+          onUpdateHearing={handleUpdateHearing}
+          onAddHearing={handleAddHearing}
+        />;
     }
   };
 

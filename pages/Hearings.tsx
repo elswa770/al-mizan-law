@@ -1,8 +1,9 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Case, Hearing, CaseStatus, HearingStatus } from '../types';
-import { Calendar, MapPin, Gavel, AlertCircle, X, Edit3, Link as LinkIcon, ExternalLink, ChevronLeft, ChevronRight, List, LayoutGrid, Clock, Filter, Printer, Download, Plus, CheckSquare, AlignJustify, DollarSign, CalendarDays, ArrowLeftCircle, CheckCircle, FileText, Upload, Image as ImageIcon, Eye, Cloud, LogIn } from 'lucide-react';
+import { Calendar, MapPin, Gavel, AlertCircle, X, Edit3, Link as LinkIcon, ExternalLink, ChevronLeft, ChevronRight, List, LayoutGrid, Clock, Filter, Printer, Download, Plus, CheckSquare, AlignJustify, DollarSign, CalendarDays, ArrowLeftCircle, CheckCircle, FileText, Upload, Image as ImageIcon, Eye, Cloud, LogIn, Wifi, WifiOff } from 'lucide-react';
 import { googleDriveService } from '../src/services/googleDriveService';
+import { offlineManager } from '../services/offlineManager';
 
 interface HearingsProps {
   hearings: Hearing[];
@@ -14,6 +15,13 @@ interface HearingsProps {
 }
 
 const Hearings: React.FC<HearingsProps> = ({ hearings, cases, onCaseClick, onUpdateHearing, onAddHearing, readOnly = false }) => {
+  // --- Connection State ---
+  const [connectionStatus, setConnectionStatus] = useState<{
+    online: boolean;
+    pendingActions: number;
+    lastSync?: string;
+  }>({ online: true, pendingActions: 0 });
+
   // --- View State ---
   const [viewMode, setViewMode] = useState<'timeline' | 'table' | 'calendar'>('timeline');
   const [filterType, setFilterType] = useState<'upcoming' | 'past' | 'today'>('upcoming');
@@ -28,6 +36,27 @@ const Hearings: React.FC<HearingsProps> = ({ hearings, cases, onCaseClick, onUpd
   const rulingFileRef = useRef<HTMLInputElement>(null);
   const [isUploadingToDrive, setIsUploadingToDrive] = useState(false);
   const [useGoogleDrive, setUseGoogleDrive] = useState(false);
+
+  // Monitor connection status
+  useEffect(() => {
+    const loadConnectionStatus = async () => {
+      try {
+        const status = await offlineManager.getOfflineStatus();
+        setConnectionStatus(status);
+      } catch (error) {
+        console.error('Failed to load connection status:', error);
+      }
+    };
+
+    loadConnectionStatus();
+
+    // Listen for connection status changes
+    const unsubscribe = offlineManager.onStatusChange((status) => {
+      setConnectionStatus(status);
+    });
+
+    return unsubscribe;
+  }, []);
 
   // --- Form Data for Wizard ---
   const [decisionData, setDecisionData] = useState({
@@ -216,10 +245,9 @@ const Hearings: React.FC<HearingsProps> = ({ hearings, cases, onCaseClick, onUpd
     }));
   };
 
-  const handleWizardComplete = () => {
+  const handleWizardComplete = async () => {
     if (editingHearing && onUpdateHearing) {
-      // 1. Update Current Hearing
-      onUpdateHearing({
+      const updatedHearing = {
         ...editingHearing,
         decision: decisionData.decision,
         status: decisionData.status,
@@ -231,20 +259,78 @@ const Hearings: React.FC<HearingsProps> = ({ hearings, cases, onCaseClick, onUpd
            description: expensesData.description,
            paidBy: expensesData.paidBy
         } : undefined
-      });
+      };
+
+      if (connectionStatus.online) {
+        // Online: Direct update
+        onUpdateHearing(updatedHearing);
+      } else {
+        // Offline: Save to local cache and queue for sync
+        try {
+          // Update in offline cache
+          const cachedHearings = await offlineManager.getCachedData('hearings') || [];
+          const updatedCache = cachedHearings.map(h => 
+            h.id === editingHearing.id ? updatedHearing : h
+          );
+          await offlineManager.cacheData('hearings', updatedCache);
+          
+          // Queue for sync
+        await offlineManager.addPendingAction({
+          type: 'update',
+          entity: 'hearing',
+          data: updatedHearing
+        });
+          
+          // Update local state
+          onUpdateHearing(updatedHearing);
+          
+          // Show notification
+          const notification = document.createElement('div');
+          notification.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+          notification.textContent = 'تم تحديث الجلسة محلياً وستتم مزامنتها عند الاتصال';
+          document.body.appendChild(notification);
+          setTimeout(() => notification.remove(), 3000);
+          
+        } catch (error) {
+          console.error('Failed to update hearing offline:', error);
+          alert('فشل تحديث الجلسة في وضع الأوفلاين');
+        }
+      }
 
       // 2. Create Next Hearing (if selected)
       if (nextSessionData.createNext && nextSessionData.date && onAddHearing) {
-         onAddHearing({
-            id: Math.random().toString(36).substring(2, 9),
+         const nextHearing = {
+            id: connectionStatus.online ? Math.random().toString(36).substring(2, 9) : `temp_hearing_${Date.now()}`,
+            firmId: 'default', // Add required firmId
             caseId: editingHearing.caseId,
             date: nextSessionData.date,
             time: '09:00', // Default
-            type: 'session',
+            type: 'session' as const, // Fix type
             status: HearingStatus.SCHEDULED,
             requirements: nextSessionData.requirements,
             clientRequirements: nextSessionData.clientRequirements
-         });
+         };
+
+         if (connectionStatus.online) {
+           onAddHearing(nextHearing);
+         } else {
+           // Offline: Save next hearing to cache and queue
+           try {
+             const cachedHearings = await offlineManager.getCachedData('hearings') || [];
+             const updatedCache = [...cachedHearings, nextHearing];
+             await offlineManager.cacheData('hearings', updatedCache);
+             
+             await offlineManager.addPendingAction({
+               type: 'create',
+               entity: 'hearing',
+               data: nextHearing
+             });
+             
+             onAddHearing(nextHearing);
+           } catch (error) {
+             console.error('Failed to create next hearing offline:', error);
+           }
+         }
       }
 
       // Reset Google Drive state
@@ -253,19 +339,54 @@ const Hearings: React.FC<HearingsProps> = ({ hearings, cases, onCaseClick, onUpd
     }
   };
 
-  const handleSaveNewHearing = (e: React.FormEvent) => {
+  const handleSaveNewHearing = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!onAddHearing || !newHearingData.caseId || !newHearingData.date) return;
 
-    onAddHearing({
-      id: Math.random().toString(36).substring(2, 9),
+    const newHearing = {
+      id: connectionStatus.online ? Math.random().toString(36).substring(2, 9) : `temp_hearing_${Date.now()}`,
+      firmId: 'default', // Add required firmId
       caseId: newHearingData.caseId,
       date: newHearingData.date,
       time: newHearingData.time,
       requirements: newHearingData.requirements,
-      type: newHearingData.type as any,
+      type: newHearingData.type as 'session' | 'procedure', // Fix type
       status: HearingStatus.SCHEDULED
-    });
+    };
+
+    if (connectionStatus.online) {
+      // Online: Direct save
+      onAddHearing(newHearing);
+    } else {
+      // Offline: Save to local cache and queue for sync
+      try {
+        // Save to offline cache
+        const cachedHearings = await offlineManager.getCachedData('hearings') || [];
+        const updatedCache = [...cachedHearings, newHearing];
+        await offlineManager.cacheData('hearings', updatedCache);
+        
+        // Queue for sync
+        await offlineManager.addPendingAction({
+          type: 'create',
+          entity: 'hearing',
+          data: newHearing
+        });
+        
+        // Update local state
+        onAddHearing(newHearing);
+        
+        // Show notification
+        const notification = document.createElement('div');
+        notification.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        notification.textContent = 'تم حفظ الجلسة محلياً وستتم مزامنتها عند الاتصال';
+        document.body.appendChild(notification);
+        setTimeout(() => notification.remove(), 3000);
+        
+      } catch (error) {
+        console.error('Failed to save hearing offline:', error);
+        alert('فشل حفظ الجلسة في وضع الأوفلاين');
+      }
+    }
 
     setIsAddModalOpen(false);
     setNewHearingData({ caseId: '', date: '', time: '', requirements: '', type: 'session' });
@@ -533,6 +654,29 @@ const Hearings: React.FC<HearingsProps> = ({ hearings, cases, onCaseClick, onUpd
                      <Gavel className="w-6 h-6 text-primary-600" />
                      إدارة الجلسات
                   </h2>
+               </div>
+               
+               {/* Connection Status */}
+               <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg">
+                  {connectionStatus.online ? (
+                     <>
+                        <Wifi className="w-4 h-4 text-green-500" />
+                        <span className="text-xs font-medium text-green-600 dark:text-green-400">متصل</span>
+                     </>
+                  ) : (
+                     <>
+                        <WifiOff className="w-4 h-4 text-red-500" />
+                        <span className="text-xs font-medium text-red-600 dark:text-red-400">غير متصل</span>
+                     </>
+                  )}
+                  {connectionStatus.pendingActions > 0 && (
+                     <div className="flex items-center gap-1">
+                        <Cloud className="w-3 h-3 text-blue-500" />
+                        <span className="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900 px-1.5 py-0.5 rounded">
+                           {connectionStatus.pendingActions}
+                        </span>
+                     </div>
+                  )}
                </div>
                
                {stats.nearest && stats.nearestCase ? (

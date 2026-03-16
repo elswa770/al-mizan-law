@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Case, Client, Hearing, CaseStatus, Task, ActivityLog, HearingStatus, CaseDocument, ClientDocument, Appointment } from '../types';
 import { Briefcase, Users, Scale, AlertCircle, Calendar, CheckSquare, Clock, DollarSign, Plus, Search, Filter, ArrowUpRight, Upload, Bell, Zap, EyeOff, Eye, Check, AlertTriangle, FileText, X, FileCheck, User } from 'lucide-react';
+import { SubscriptionService } from '../src/services/subscriptionService';
 
 interface DashboardProps {
   cases: Case[];
@@ -15,6 +16,8 @@ interface DashboardProps {
   onCaseClick?: (caseId: string) => void;
   onUpdateCase?: (updatedCase: Case) => void;
   onUpdateClient?: (updatedClient: Client) => void;
+  onUpdateHearing?: (hearing: Hearing) => void;
+  onAddHearing?: (hearing: Hearing) => void;
   readOnly?: boolean;
 }
 
@@ -31,9 +34,16 @@ const StatCard = ({ title, value, subtext, icon: Icon, color, onClick }: { title
   </div>
 );
 
-const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appointments = [], tasks = [], activities = [], onUpdateTask, onNavigate, onCaseClick, onUpdateCase, onUpdateClient, readOnly = false }) => {
+const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appointments = [], tasks = [], activities = [], onUpdateTask, onNavigate, onCaseClick, onUpdateCase, onUpdateClient, onUpdateHearing, onAddHearing, readOnly = false }) => {
+  console.log('Dashboard component mounted with:', {
+    onUpdateHearing: !!onUpdateHearing,
+    onAddHearing: !!onAddHearing,
+    readOnly
+  });
+  
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [updateCounter, setUpdateCounter] = useState(0);
 
   // --- Upload Modal State ---
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -93,6 +103,90 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
      if (task) {
         onUpdateTask({ ...task, status: task.status === 'completed' ? 'pending' : 'completed' });
      }
+  };
+
+  // --- Hearing Management Helpers ---
+  const handlePostponeHearing = (hearing: Hearing) => {
+    console.log('handlePostponeHearing called with:', hearing);
+    console.log('onUpdateHearing available:', !!onUpdateHearing);
+    console.log('onAddHearing available:', !!onAddHearing);
+    console.log('readOnly:', readOnly);
+    
+    if (!onUpdateHearing || readOnly) {
+      console.log('Early return - conditions not met');
+      return;
+    }
+    
+    // Create next hearing with postponed date
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const nextHearing: Hearing = {
+      ...hearing,
+      id: Math.random().toString(36).substring(2, 9),
+      firmId: hearing.firmId || 'default', // Add required firmId
+      date: tomorrow.toISOString().split('T')[0],
+      status: HearingStatus.POSTPONED
+    };
+    
+    console.log('Updating current hearing:', hearing);
+    console.log('Adding next hearing:', nextHearing);
+    
+    // Simple test update
+    const testUpdate = { ...hearing, status: HearingStatus.POSTPONED };
+    onUpdateHearing(testUpdate);
+    
+    // Simple test add
+    onAddHearing && onAddHearing(nextHearing);
+    
+    // Force UI update by triggering a state change
+    setUpdateCounter(prev => prev + 1);
+    
+    // Force immediate re-render
+    setTimeout(() => {
+      setUpdateCounter(prev => prev + 1);
+    }, 100);
+    
+    // Force window reload to see changes
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
+  };
+
+  const handleRecordDecision = (hearing: Hearing) => {
+    console.log('handleRecordDecision called with:', hearing);
+    console.log('onUpdateHearing available:', !!onUpdateHearing);
+    console.log('readOnly:', readOnly);
+    
+    if (!onUpdateHearing || readOnly) {
+      console.log('Early return - conditions not met');
+      return;
+    }
+    
+    const updatedHearing: Hearing = {
+      ...hearing,
+      status: HearingStatus.COMPLETED,
+      decision: 'تم تسجيل القرار',
+      isCompleted: true
+    };
+    
+    console.log('Updating hearing with decision:', updatedHearing);
+    
+    // Simple test update
+    onUpdateHearing(updatedHearing);
+    
+    // Force UI update by triggering a state change
+    setUpdateCounter(prev => prev + 1);
+    
+    // Force immediate re-render
+    setTimeout(() => {
+      setUpdateCounter(prev => prev + 1);
+    }, 100);
+    
+    // Force window reload to see changes
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
   };
 
   // --- Upload Helpers ---
@@ -221,6 +315,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                color="text-blue-600 bg-blue-600" 
                onClick={() => onNavigate && onNavigate('cases')}
             />
+            {/* Update Counter Display */}
+            {updateCounter > 0 && (
+              <div className="fixed top-4 right-4 bg-green-500 text-white px-3 py-1 rounded-lg shadow-lg z-50 animate-in fade-in">
+                <span className="text-sm font-bold">تم تحديث {updateCounter} جلسة</span>
+              </div>
+            )}
             <StatCard 
                title="جلسات اليوم" 
                value={todayHearings.length} 
@@ -279,8 +379,20 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                            </div>
                            {!readOnly && (
                              <div className="flex items-center gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button className="px-3 py-1 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-white">تأجيل</button>
-                                <button className="px-3 py-1 bg-amber-600 text-white rounded text-xs font-bold hover:bg-amber-700">تسجيل قرار</button>
+                                <button 
+                                  onClick={() => handlePostponeHearing(h)}
+                                  className="px-3 py-1 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-white"
+                                  title="تأجيل الجلسة ليوم آخر"
+                                >
+                                  تأجيل
+                                </button>
+                                <button 
+                                  onClick={() => handleRecordDecision(h)}
+                                  className="px-3 py-1 bg-amber-600 text-white rounded text-xs font-bold hover:bg-amber-700"
+                                  title="تسجيل قرار الجلسة"
+                                >
+                                  تسجيل قرار
+                                </button>
                              </div>
                            )}
                         </div>

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Client, Case, Hearing, ClientType, ClientStatus } from '../types';
 import { User, Phone, MapPin, Search, Plus, X, Save, Mail, FileText, Grid, List, Building2, Filter, Download, MessageCircle, ArrowUpRight, DollarSign, Calendar, FileSpreadsheet, Printer, AlertTriangle, ShieldAlert, Wifi, WifiOff, Cloud } from 'lucide-react';
 import { offlineManager } from '../services/offlineManager';
+import { SubscriptionService } from '../src/services/subscriptionService';
 
 interface ClientsProps {
   clients: Client[];
@@ -19,6 +20,14 @@ interface ClientsProps {
 const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser, onClientClick, onAddClient, onAddClientLocal, onUpdateClient, readOnly = false }) => {
   // Offline Status State
   const [offlineStatus, setOfflineStatus] = useState<any>(null);
+  
+  // Subscription Limit State
+  const [subscriptionLimit, setSubscriptionLimit] = useState<{
+    reached: boolean;
+    current: number;
+    max: number;
+    message: string;
+  }>({ reached: false, current: 0, max: 0, message: '' });
   
   // View State
   const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
@@ -67,6 +76,33 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
 
     return unsubscribe;
   }, []);
+
+  // Check subscription limits
+  useEffect(() => {
+    const checkSubscriptionLimits = async () => {
+      if (currentUser?.firmId) {
+        try {
+          const clientCheck = await SubscriptionService.canAddClient(currentUser.firmId, currentUser.email);
+          setSubscriptionLimit({
+            reached: !clientCheck.canAdd,
+            current: clientCheck.current,
+            max: clientCheck.max,
+            message: clientCheck.message
+          });
+        } catch (error) {
+          console.error('Error checking subscription limits:', error);
+          setSubscriptionLimit({
+            reached: false,
+            current: 0,
+            max: 0,
+            message: 'غير محدود (مدير النظام)'
+          });
+        }
+      }
+    };
+    setSubscriptionLimit({ reached: false, current: 0, max: 0, message: '' });
+    checkSubscriptionLimits();
+  }, [currentUser?.firmId, clients.length]);
 
   // Derived Data Helpers
   const getClientCaseStats = (clientId: string) => {
@@ -228,19 +264,23 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
       if (!currentUser?.firmId) {
         console.error('❌ Cannot create client: currentUser or firmId is missing');
         alert('خطأ: لا يمكن إنشاء موكل جديد. يرجى إعادة تحميل الصفحة.');
+        return;
+      }
+      if (!formData.name) {
+        alert('يرجى إدخال اسم الموكل');
+        return;
       }
       return;
     }
-    
-    // Prevent multiple submissions
-    if (isSubmitting) {
-      console.log('⚠️ Already submitting, preventing duplicate submission');
-      return;
-    }
-    
-    setIsSubmitting(true);
-    
+
     try {
+      // Check subscription limits before adding client
+      const clientCheck = await SubscriptionService.canAddClient(currentUser.firmId, currentUser.email);
+      if (!clientCheck.canAdd) {
+        alert(clientCheck.message);
+        return;
+      }
+      
       const newClient: Client = {
         id: Math.random().toString(36).substring(2, 9),
         name: formData.name,
@@ -592,6 +632,26 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
              </div>
           </div>
        </div>
+
+       {/* Subscription Limit Warning */}
+       {subscriptionLimit.reached && (
+         <div className="mb-4 p-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 animate-pulse">
+           <div className="flex items-center gap-3">
+             <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+             <div className="flex-1">
+               <h3 className="font-bold text-red-800 dark:text-red-200 mb-1">
+                 تم الوصول إلى الحد الأقصى للموكلين
+               </h3>
+               <p className="text-sm text-red-700 dark:text-red-300">
+                 {subscriptionLimit.message}
+               </p>
+               <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                 الحالي: {subscriptionLimit.current} / المسموح: {subscriptionLimit.max} موكل
+               </p>
+             </div>
+           </div>
+         </div>
+       )}
 
        {/* 2. Clients Content */}
        {viewMode === 'card' ? renderCardView() : renderTableView()}

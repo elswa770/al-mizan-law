@@ -4,6 +4,7 @@ import { Case, Client, CaseStatus, CourtType, LawBranch, Lawyer } from '../types
 import { Briefcase, Search, Plus, Filter, User, Calendar, MapPin, ArrowUpRight, X, Save, Gavel, LayoutGrid, List, Users, Scale, Wifi, WifiOff, Cloud, AlertCircle } from 'lucide-react';
 import { useOfflineStatus } from '../hooks/useOfflineStatus';
 import { offlineManager } from '../services/offlineManager';
+import { SubscriptionService } from '../src/services/subscriptionService';
 
 interface CasesProps {
   cases: Case[];
@@ -26,6 +27,14 @@ const Cases: React.FC<CasesProps> = ({ cases, clients, lawyers = [], currentUser
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Subscription Limit State
+  const [subscriptionLimit, setSubscriptionLimit] = useState<{
+    reached: boolean;
+    current: number;
+    max: number;
+    message: string;
+  }>({ reached: false, current: 0, max: 0, message: '' });
   
   // New Case Form State
   const [formData, setFormData] = useState<Partial<Case>>({
@@ -65,6 +74,33 @@ const Cases: React.FC<CasesProps> = ({ cases, clients, lawyers = [], currentUser
     return unsubscribe;
   }, []);
 
+  // Check subscription limits
+  useEffect(() => {
+    const checkSubscriptionLimits = async () => {
+      if (currentUser?.firmId) {
+        try {
+          const caseCheck = await SubscriptionService.canAddCase(currentUser.firmId, currentUser.email);
+          setSubscriptionLimit({
+            reached: !caseCheck.canAdd,
+            current: caseCheck.current,
+            max: caseCheck.max,
+            message: caseCheck.message
+          });
+        } catch (error) {
+          console.error('Error checking subscription limits:', error);
+          setSubscriptionLimit({
+            reached: false,
+            current: 0,
+            max: 0,
+            message: 'غير محدود (مدير النظام)'
+          });
+        }
+      }
+    };
+
+    checkSubscriptionLimits();
+  }, [currentUser?.firmId, cases.length]);
+
   const filteredCases = cases.filter(c => {
     const matchesSearch = 
       c.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -86,6 +122,17 @@ const Cases: React.FC<CasesProps> = ({ cases, clients, lawyers = [], currentUser
     setIsSubmitting(true);
     
     try {
+      // Check subscription limits before adding case
+      if (currentUser?.firmId) {
+        const caseCheck = await SubscriptionService.canAddCase(currentUser.firmId, currentUser.email);
+        
+        if (!caseCheck.canAdd) {
+          alert(caseCheck.message);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+      
       const client = clients.find(c => c.id === formData.clientId);
       const tempId = `temp_case_${Math.random().toString(36).substring(2, 9)}`;
       
@@ -416,6 +463,26 @@ const Cases: React.FC<CasesProps> = ({ cases, clients, lawyers = [], currentUser
 
       {/* Offline Status */}
       {renderOfflineStatus()}
+
+      {/* Subscription Limit Warning */}
+      {subscriptionLimit.reached && (
+        <div className="mb-4 p-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 animate-pulse">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="font-bold text-red-800 dark:text-red-200 mb-1">
+                تم الوصول إلى الحد الأقصى للقضايا
+              </h3>
+              <p className="text-sm text-red-700 dark:text-red-300">
+                {subscriptionLimit.message}
+              </p>
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                الحالي: {subscriptionLimit.current} / المسموح: {subscriptionLimit.max} قضية
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filters & View Toggle */}
       <div className="flex flex-col gap-4">

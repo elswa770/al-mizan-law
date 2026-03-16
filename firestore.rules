@@ -205,6 +205,11 @@ service cloud.firestore {
               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.firmId == firmId));
     }
 
+    // Check if authenticated user can create firms (for new user onboarding)
+    function canCreateFirm() {
+      return isAuthenticated() && request.auth != null && request.auth.uid != null;
+    }
+
     // Check if the user is an admin
     function isAdmin() {
       return isAuthenticated() &&
@@ -243,18 +248,27 @@ service cloud.firestore {
       return hasRequiredFields(['name', 'subscriptionStatus', 'subscriptionPlan', 'createdAt']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.subscriptionStatus in ['active', 'inactive', 'trial'] &&
-             data.subscriptionPlan in ['basic', 'pro', 'enterprise'] &&
+             data.subscriptionPlan in ['basic', 'pro', 'enterprise', 'trial'] &&
              data.createdAt is string;
     }
 
+    function isValidFirmUpdate(data) {
+      return (!('name' in data) || (data.name is string && data.name.size() > 0 && data.name.size() < 100)) &&
+             (!('subscriptionStatus' in data) || (data.subscriptionStatus in ['active', 'inactive', 'trial'])) &&
+             (!('subscriptionPlan' in data) || (data.subscriptionPlan is string && data.subscriptionPlan.size() > 0)) &&
+             (!('subscriptionEndDate' in data) || (data.subscriptionEndDate is string && data.subscriptionEndDate.size() > 0)) &&
+             (!('createdAt' in data) || (data.createdAt is string));
+    }
+
     function isValidUser(data) {
-      return hasRequiredFields(['firmId', 'name', 'email', 'roleLabel', 'isActive', 'permissions']) &&
-             data.firmId is string && data.firmId.size() > 0 &&
+      return hasRequiredFields(['name', 'email', 'roleLabel', 'isActive', 'permissions']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             isValidEmail(data.email) &&
+             data.email is string && data.email.size() > 0 && data.email.size() < 100 &&
              data.roleLabel is string && data.roleLabel.size() > 0 && data.roleLabel.size() < 50 &&
              data.isActive is bool &&
-             data.permissions is list;
+             data.permissions is list &&
+             // Allow empty firmId for new users (will be set when firm is created)
+             (!('firmId' in data) || (data.firmId is string && data.firmId.size() >= 0));
     }
 
     function isValidCase(data) {
@@ -447,7 +461,8 @@ service cloud.firestore {
              (!('autoBackup' in data) || (data.autoBackup is string && data.autoBackup.size() > 0)) &&
              (!('dataRetention' in data) || (data.dataRetention is string && data.dataRetention.size() > 0)) &&
              (!('maxFileSize' in data) || (data.maxFileSize is number && data.maxFileSize > 0)) &&
-             (!('allowedFileTypes' in data) || (data.allowedFileTypes is list && data.allowedFileTypes.size() > 0));
+             (!('allowedFileTypes' in data) || (data.allowedFileTypes is list && data.allowedFileTypes.size() > 0)) &&
+             (!('encryptionEnabled' in data) || data.encryptionEnabled is bool);
     }
 
     function isValidSecuritySettings(data) {
@@ -460,14 +475,47 @@ service cloud.firestore {
              (!('twoFactorAuth' in data) || data.twoFactorAuth is bool);
     }
 
+    function isValidSubscriptionRequest(data) {
+      return hasRequiredFields(['firmId', 'firmName', 'planId', 'planName', 'price', 'currency', 'billingCycle', 'status', 'requestedAt']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             data.firmName is string && data.firmName.size() > 0 && data.firmName.size() < 100 &&
+             data.planId is string && data.planId.size() > 0 && data.planId.size() < 50 &&
+             data.planName is string && data.planName.size() > 0 && data.planName.size() < 100 &&
+             data.price is number && data.price > 0 &&
+             data.currency is string && data.currency.size() > 0 && data.currency.size() < 10 &&
+             data.billingCycle in ['monthly', 'yearly'] &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.requestedAt is string && data.requestedAt.size() > 0 &&
+             (!('paymentProof' in data) || (data.paymentProof is string && data.paymentProof.size() > 0 && data.paymentProof.size() < 200));
+    }
+
+    function isValidSubscriptionRequestUpdate(data) {
+      return (!('firmId' in data) || (data.firmId is string && data.firmId.size() > 0)) &&
+             (!('firmName' in data) || (data.firmName is string && data.firmName.size() > 0 && data.firmName.size() < 100)) &&
+             (!('planId' in data) || (data.planId is string && data.planId.size() > 0 && data.planId.size() < 50)) &&
+             (!('planName' in data) || (data.planName is string && data.planName.size() > 0 && data.planName.size() < 100)) &&
+             (!('price' in data) || (data.price is number && data.price > 0)) &&
+             (!('currency' in data) || (data.currency is string && data.currency.size() > 0 && data.currency.size() < 10)) &&
+             (!('billingCycle' in data) || (data.billingCycle in ['monthly', 'yearly'])) &&
+             (!('status' in data) || (data.status in ['pending', 'approved', 'rejected'])) &&
+             (!('paymentProof' in data) || (data.paymentProof is string && data.paymentProof.size() > 0 && data.paymentProof.size() < 200));
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
 
+    match /subscriptionPlans/{planId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isSuperAdmin();
+      allow update: if isAuthenticated() && isSuperAdmin();
+      allow delete: if isAuthenticated() && isSuperAdmin();
+    }
+
     match /firms/{firmId} {
       allow read: if isAuthenticated() && (belongsToFirm(firmId) || isAdmin() || isSuperAdmin());
-      allow create: if isAuthenticated() && isValidFirm(request.resource.data);
-      allow update: if isAuthenticated() && isValidFirm(request.resource.data) && (belongsToFirm(firmId) || isAdmin() || isSuperAdmin());
+      allow create: if isAuthenticated() && isValidFirm(request.resource.data) && (isSuperAdmin() || isAdmin() || canCreateFirm());
+      allow update: if isAuthenticated() && isValidFirmUpdate(request.resource.data) && (belongsToFirm(firmId) || isAdmin() || isSuperAdmin());
     }
 
     match /settings/{settingId} {
@@ -499,10 +547,27 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
-      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)) || (request.auth.uid == userId && !exists(/databases/$(database)/documents/users/$(userId))));
-      allow update: if isAuthenticated() && isValidUserUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
-      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      // Allow users to read their own document
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      // Allow users to create their own document (for first-time login)
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && request.auth.uid == userId;
+      // Allow users to update their own document
+      allow update: if isAuthenticated() && isValidUserUpdate(request.resource.data) && request.auth.uid == userId;
+      // Allow admins to manage users
+      allow read, create, update, delete: if isAuthenticated() && (isSuperAdmin() || isAdmin());
+    }
+
+    // Allow listing users within a firm for subscription limit checking
+    match /firms/{firmId}/users/{userId} {
+      allow read: if isAuthenticated() && belongsToFirm(firmId);
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && belongsToFirm(firmId);
+      allow update: if isAuthenticated() && isValidUserUpdate(request.resource.data) && belongsToFirm(firmId);
+      allow delete: if isAuthenticated() && belongsToFirm(firmId);
+    }
+
+    // Allow listing all users within a firm for subscription limit checking
+    match /firms/{firmId}/users {
+      allow list: if isAuthenticated() && belongsToFirm(firmId);
     }
 
     match /cases/{caseId} {
@@ -512,11 +577,31 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
     }
 
+    // Allow listing cases within a firm for subscription limit checking
+    match /firms/{firmId}/cases/{caseId} {
+      allow read: if isAuthenticated() && belongsToFirm(firmId);
+    }
+
+    // Allow listing all cases within a firm for subscription limit checking
+    match /firms/{firmId}/cases {
+      allow list: if isAuthenticated() && belongsToFirm(firmId);
+    }
+
     match /clients/{clientId} {
       allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
       allow create: if isAuthenticated() && isValidClient(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
       allow update: if isAuthenticated() && isValidClientUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
       allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    // Allow listing clients within a firm for subscription limit checking
+    match /firms/{firmId}/clients/{clientId} {
+      allow read: if isAuthenticated() && belongsToFirm(firmId);
+    }
+
+    // Allow listing all clients within a firm for subscription limit checking
+    match /firms/{firmId}/clients {
+      allow list: if isAuthenticated() && belongsToFirm(firmId);
     }
 
     match /hearings/{hearingId} {
@@ -559,8 +644,22 @@ service cloud.firestore {
       // References can be global (no firmId) or firm-specific
       allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || resource == null || !('firmId' in resource.data) || belongsToFirm(resource.data.firmId));
       allow create: if isAuthenticated() && isValidLegalReference(request.resource.data) && (isSuperAdmin() || isAdmin() || !('firmId' in request.resource.data) || belongsToFirm(request.resource.data.firmId));
-      allow update: if isAuthenticated() && isValidLegalReferenceUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || resource == null || !('firmId' in resource.data) || belongsToFirm(resource.data.firmId));
-      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || resource == null || !('firmId' in resource.data) || belongsToFirm(resource.data.firmId));
+      allow update: if isAuthenticated() && isValidLegalReferenceUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || resource == null || !('firmId' in request.resource.data) || belongsToFirm(resource.data.firmId));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || resource == null || !('firmId' in request.data) || belongsToFirm(resource.data.firmId));
+    }
+
+    match /subscriptionRequests/{requestId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && isValidSubscriptionRequest(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
+      allow update: if isAuthenticated() && isValidSubscriptionRequestUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    match /subscriptionPlans/{planId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin());
+      allow create: if isAuthenticated() && isSuperAdmin();
+      allow update: if isAuthenticated() && isSuperAdmin();
+      allow delete: if isAuthenticated() && isSuperAdmin();
     }
   }
 }

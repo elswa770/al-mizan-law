@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Scale, Building2, ArrowRight } from 'lucide-react';
-import { auth, db } from '../firebase';
-import { collection, addDoc, doc, setDoc } from 'firebase/firestore';
+import { Building, Briefcase, Scale, ArrowRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { db } from '../firebase';
+import { collection, addDoc, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { SubscriptionService } from '../src/services/subscriptionService';
 import { MOCK_ROLES } from '../services/mockData'; // We'll use this to assign initial permissions
 
 const Onboarding: React.FC = () => {
@@ -19,17 +20,28 @@ const Onboarding: React.FC = () => {
     setError('');
 
     try {
+      console.log('🎯 Starting firm creation...');
+      console.log('👤 Firebase user:', firebaseUser);
+      
       // 1. Create the Firm document
       const firmRef = await addDoc(collection(db, 'firms'), {
         name: firmName,
         subscriptionStatus: 'trial',
-        subscriptionPlan: 'basic',
+        subscriptionPlan: 'trial', // Changed to 'trial'
         createdAt: new Date().toISOString()
       });
+      
+      console.log('✅ Firm created with ID:', firmRef.id);
 
-      // 2. Create the User document linked to the new firm
+      // 2. Create trial subscription
+      await SubscriptionService.createTrialSubscription(firmRef.id);
+      console.log('✅ Trial subscription created');
+
+      // 3. Create the User document linked to the new firm
       // Give them the "Admin" role permissions by default
       const adminRole = MOCK_ROLES.find(r => r.name === 'مدير النظام') || MOCK_ROLES[0];
+      
+      console.log('🔑 Admin role found:', adminRole);
       
       const userData: any = {
         id: firebaseUser.uid,
@@ -43,8 +55,16 @@ const Onboarding: React.FC = () => {
       if (firebaseUser.photoURL) {
         userData.avatar = firebaseUser.photoURL;
       }
+      
+      console.log('👤 User data to create:', userData);
+      
       await setDoc(doc(db, 'users', firebaseUser.uid), userData);
+      console.log('✅ User document created successfully');
 
+      // Force a page reload to trigger the AuthContext to update
+      console.log('🔄 Reloading page...');
+      window.location.reload();
+      
       // The AuthContext onSnapshot will automatically pick up the new user document
       // and update the currentUser state, moving them past the onboarding screen.
     } catch (err: any) {
@@ -81,7 +101,7 @@ const Onboarding: React.FC = () => {
            <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">اسم مكتب المحاماة</label>
               <div className="relative">
-                 <Building2 className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                 <Building className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
                  <input 
                    type="text" 
                    value={firmName}

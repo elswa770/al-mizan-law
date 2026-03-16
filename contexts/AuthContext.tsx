@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { auth, db } from '../firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { AppUser } from '../types';
 
 interface AuthContextType {
@@ -33,14 +33,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (user) {
         // Listen to the user document in real-time
-        unsubscribeUser = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+        unsubscribeUser = onSnapshot(doc(db, 'users', user.uid), async (docSnap) => {
           if (docSnap.exists()) {
             const userData = docSnap.data() as AppUser;
             setCurrentUser({ ...userData, id: user.uid });
           } else {
             // User exists in Auth but not in Firestore (e.g., first time login)
-            // Needs onboarding
-            setCurrentUser(null);
+            // Create user document automatically
+            const newUserDoc: AppUser = {
+              id: user.uid,
+              email: user.email || '',
+              name: user.displayName || '',
+              roleLabel: 'مدير النظام', // Default role for first-time users
+              isActive: true,
+              permissions: [], // Will be populated based on role
+              firmId: '' // Will be set when firm is created
+            };
+            
+            // Create user document in Firestore
+            await setDoc(doc(db, 'users', user.uid), newUserDoc);
+            setCurrentUser(newUserDoc);
+            console.log('✅ Created user document for first-time login:', user.uid);
           }
           setLoading(false);
         }, (error) => {

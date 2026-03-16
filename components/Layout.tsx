@@ -1,8 +1,9 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { LayoutDashboard, Briefcase, Users, Gavel, FileText, BrainCircuit, LogOut, Menu, Bell, Calendar, X, Clock, AlertTriangle, CheckCircle, ChevronRight, ChevronLeft, Settings, BarChart3, Wallet, File, Search, Library, PlusCircle, Shield, CheckSquare, Map, Calculator, PenTool, Archive, Scale, Wifi, WifiOff, Cloud } from 'lucide-react';
+import { LayoutDashboard, Briefcase, Users, Gavel, FileText, BrainCircuit, LogOut, Menu, Bell, Calendar, X, Clock, AlertTriangle, CheckCircle, ChevronRight, ChevronLeft, Settings, BarChart3, Wallet, File, Search, Library, PlusCircle, Shield, CheckSquare, Map, Calculator, PenTool, Archive, Scale, Wifi, WifiOff, Cloud, Timer } from 'lucide-react';
 import { AppUser } from '../types';
 import { offlineManager } from '../services/offlineManager';
+import { SubscriptionService } from '../src/services/subscriptionService';
 
 interface NotificationItem {
   id: string;
@@ -47,6 +48,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
     lastSync?: string;
   }>({ online: true, pendingActions: 0 });
 
+  // Trial Status State
+  const [trialStatus, setTrialStatus] = useState<{
+    isTrial: boolean;
+    daysLeft: number;
+    message: string;
+    isExpired: boolean;
+  }>({ isTrial: false, daysLeft: 0, message: '', isExpired: false });
+
   // Close notifications when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -62,6 +71,32 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Check trial status
+  useEffect(() => {
+    const checkTrialStatus = async () => {
+      if (currentUser?.firmId) {
+        try {
+          const status = await SubscriptionService.checkTrialStatus(currentUser.firmId);
+          if (status.message && !status.isExpired) {
+            setTrialStatus({
+              isTrial: true,
+              daysLeft: status.daysLeft,
+              message: status.message,
+              isExpired: status.isExpired
+            });
+          } else {
+            setTrialStatus({ isTrial: false, daysLeft: 0, message: '', isExpired: false });
+          }
+        } catch (error) {
+          console.error('Error checking trial status:', error);
+          setTrialStatus({ isTrial: false, daysLeft: 0, message: '', isExpired: false });
+        }
+      }
+    };
+
+    checkTrialStatus();
+  }, [currentUser?.firmId]);
 
   // Load and monitor connection status
   useEffect(() => {
@@ -474,6 +509,16 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
                 </div>
               )}
             </div>
+
+            {/* Trial Status */}
+            {trialStatus.isTrial && !trialStatus.isExpired && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg animate-pulse">
+                <Timer className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                  باقة تجريبية: {trialStatus.daysLeft} أيام متبقية
+                </span>
+              </div>
+            )}
 
             {/* Global Search */}
             <div className="relative hidden lg:block">

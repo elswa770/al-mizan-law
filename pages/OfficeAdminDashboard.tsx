@@ -12,11 +12,13 @@ interface OfficeAdminDashboardProps {
   hearings: Hearing[];
   tasks: Task[];
   currentUser: any; // Assuming you have a way to check roles
+  onUpdateHearing?: (hearing: Hearing) => void;
+  onAddHearing?: (hearing: Hearing) => void;
 }
 
 const COLORS = ['#0ea5e9', '#22c55e', '#eab308', '#ef4444', '#8b5cf6'];
 
-const OfficeAdminDashboard: React.FC<OfficeAdminDashboardProps> = ({ cases, clients, hearings, tasks, currentUser }) => {
+const OfficeAdminDashboard: React.FC<OfficeAdminDashboardProps> = ({ cases, clients, hearings, tasks, currentUser, onUpdateHearing, onAddHearing }) => {
   const [loading, setLoading] = useState(false);
 
   // --- Data Aggregation ---
