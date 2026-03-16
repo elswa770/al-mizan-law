@@ -1,0 +1,234 @@
+{
+  "entities": {
+    "AppUser": {
+      "title": "AppUser",
+      "description": "Represents a user of the application.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firmId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "username": { "type": "string" },
+        "roleLabel": { "type": "string" },
+        "roleId": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "moduleId": { "type": "string" },
+              "access": { "type": "string", "enum": ["none", "read", "write"] }
+            }
+          }
+        },
+        "avatar": { "type": "string" },
+        "lastLogin": { "type": "string" }
+      },
+      "required": ["firmId", "name", "email", "roleLabel", "isActive", "permissions"]
+    },
+    "Firm": {
+      "title": "Firm",
+      "description": "Represents a law firm.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "logo": { "type": "string" },
+        "subscriptionStatus": { "type": "string", "enum": ["active", "inactive", "trial"] },
+        "subscriptionPlan": { "type": "string", "enum": ["basic", "pro", "enterprise"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name", "subscriptionStatus", "subscriptionPlan", "createdAt"]
+    },
+    "Case": {
+      "title": "Case",
+      "description": "Represents a legal case.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firmId": { "type": "string" },
+        "title": { "type": "string" },
+        "caseNumber": { "type": "string" },
+        "year": { "type": "number" },
+        "court": { "type": "string" },
+        "status": { "type": "string", "enum": ["مفتوحة", "مغلقة", "مؤرشفة", "حكم نهائي", "قيد التنفيذ"] },
+        "clientId": { "type": "string" },
+        "clientName": { "type": "string" }
+      },
+      "required": ["firmId", "title", "caseNumber", "year", "court", "status", "clientId", "clientName"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Represents a client.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firmId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["فرد", "شركة"] },
+        "status": { "type": "string", "enum": ["نشط", "غير نشط"] },
+        "nationalId": { "type": "string" },
+        "phone": { "type": "string" }
+      },
+      "required": ["firmId", "name", "type", "status", "nationalId", "phone"]
+    },
+    "Hearing": {
+      "title": "Hearing",
+      "description": "Represents a court hearing.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firmId": { "type": "string" },
+        "caseId": { "type": "string" },
+        "date": { "type": "string" },
+        "type": { "type": "string", "enum": ["session", "procedure"] },
+        "status": { "type": "string", "enum": ["محددة", "تمت", "مؤجلة", "ملغاة", "حجز للحكم"] }
+      },
+      "required": ["firmId", "caseId", "date", "type", "status"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Represents an appointment or scheduled task.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firmId": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "type": { "type": "string", "enum": ["meeting", "court", "client", "video_call", "phone_call", "internal", "other"] },
+        "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+        "status": { "type": "string", "enum": ["scheduled", "in_progress", "completed", "cancelled", "postponed"] },
+        "description": { "type": "string" },
+        "location": { "type": "string" },
+        "onlineMeetingUrl": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "relatedCaseId": { "type": "string" },
+        "relatedClientId": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["firmId", "title", "date", "startTime", "endTime", "type", "priority", "status"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Represents a task.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firmId": { "type": "string" },
+        "title": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+        "status": { "type": "string", "enum": ["pending", "in_progress", "completed"] }
+      },
+      "required": ["firmId", "title", "dueDate", "priority", "status"]
+    },
+    "Lawyer": {
+      "title": "Lawyer",
+      "description": "Represents a lawyer.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firmId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "governorate": { "type": "string" },
+        "barLevel": { "type": "string", "enum": ["general", "primary", "appeal", "cassation"] },
+        "salary": { "type": "number" },
+        "joinDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] }
+      },
+      "required": ["firmId", "name", "phone", "governorate", "barLevel", "salary", "joinDate", "status"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Represents an activity log.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firmId": { "type": "string" },
+        "user": { "type": "string" },
+        "action": { "type": "string" },
+        "target": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["firmId", "user", "action", "target", "timestamp"]
+    },
+    "LegalReference": {
+      "title": "LegalReference",
+      "description": "Represents a legal reference.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firmId": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["law", "ruling", "encyclopedia", "regulation"] },
+        "branch": { "type": "string", "enum": ["civil", "criminal", "administrative", "commercial", "family", "labor", "other"] }
+      },
+      "required": ["title", "type", "branch"]
+    },
+    "FirmSettings": {
+      "title": "FirmSettings",
+      "description": "Represents settings for a firm.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firmId": { "type": "string" },
+        "generalSettings": { "type": "string" },
+        "securitySettings": { "type": "string" },
+        "notificationSettings": { "type": "string" },
+        "dataSettings": { "type": "string" }
+      },
+      "required": ["firmId"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": { "$ref": "#/entities/AppUser" },
+      "description": "Collection of users."
+    },
+    "firms": {
+      "schema": { "$ref": "#/entities/Firm" },
+      "description": "Collection of firms."
+    },
+    "settings": {
+      "schema": { "$ref": "#/entities/FirmSettings" },
+      "description": "Collection of firm settings."
+    },
+    "cases": {
+      "schema": { "$ref": "#/entities/Case" },
+      "description": "Collection of cases."
+    },
+    "clients": {
+      "schema": { "$ref": "#/entities/Client" },
+      "description": "Collection of clients."
+    },
+    "hearings": {
+      "schema": { "$ref": "#/entities/Hearing" },
+      "description": "Collection of hearings."
+    },
+    "appointments": {
+      "schema": { "$ref": "#/entities/Appointment" },
+      "description": "Collection of appointments."
+    },
+    "tasks": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Collection of tasks."
+    },
+    "lawyers": {
+      "schema": { "$ref": "#/entities/Lawyer" },
+      "description": "Collection of lawyers."
+    },
+    "activities": {
+      "schema": { "$ref": "#/entities/ActivityLog" },
+      "description": "Collection of activity logs."
+    },
+    "references": {
+      "schema": { "$ref": "#/entities/LegalReference" },
+      "description": "Collection of legal references."
+    }
+  }
+}

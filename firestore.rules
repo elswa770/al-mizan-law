@@ -1,0 +1,566 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // This security rules file assumes the following data structures:
+    //
+    // Collection: users
+    // Document ID: userId
+    // Fields:
+    //   - firmId: string (required)
+    //   - name: string (required)
+    //   - email: string (required)
+    //   - roleLabel: string (required)
+    //   - isActive: boolean (required)
+    //   - permissions: list (required)
+    //
+    // Collection: firms
+    // Document ID: firmId
+    // Fields:
+    //   - name: string (required)
+    //   - subscriptionStatus: string (required)
+    //   - subscriptionPlan: string (required)
+    //   - createdAt: string (required)
+    //
+    // Collection: cases
+    // Document ID: caseId
+    // Fields:
+    //   - firmId: string (required)
+    //   - title: string (required)
+    //   - caseNumber: string (required)
+    //   - year: number (required)
+    //   - court: string (required)
+    //   - status: string (required)
+    //   - clientId: string (required)
+    //   - clientName: string (required)
+    //
+    // Collection: clients
+    // Document ID: clientId
+    // Fields:
+    //   - firmId: string (required)
+    //   - name: string (required)
+    //   - type: string (required)
+    //   - status: string (required)
+    //   - nationalId: string (required)
+    //   - phone: string (required)
+    //
+    // Collection: hearings
+    // Document ID: hearingId
+    // Fields:
+    //   - firmId: string (required)
+    //   - caseId: string (required)
+    //   - date: string (required)
+    //   - type: string (required)
+    //   - status: string (required)
+    //
+    // Collection: tasks
+    // Document ID: taskId
+    // Fields:
+    //   - firmId: string (required)
+    //   - title: string (required)
+    //   - dueDate: string (required)
+    //   - priority: string (required)
+    //   - status: string (required)
+    //
+    // Collection: lawyers
+    // Document ID: lawyerId
+    // Fields:
+    //   - firmId: string (required)
+    //   - name: string (required)
+    //   - phone: string (required)
+    //   - governorate: string (required)
+    //   - barLevel: string (required)
+    //   - salary: number (required)
+    //   - joinDate: string (required)
+    //   - status: string (required)
+    //
+    // Collection: activities
+    // Document ID: activityId
+    // Fields:
+    //   - firmId: string (required)
+    //   - user: string (required)
+    //   - action: string (required)
+    //   - target: string (required)
+    //   - timestamp: string (required)
+    //
+    // Collection: references
+    // Document ID: referenceId
+    // Fields:
+    //   - firmId: string (optional)
+    //   - title: string (required)
+    //   - type: string (required)
+    //   - branch: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user is owner based on document's uid field
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    // Verify UID hasn't been tampered with on create
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    // Ensure uid field is not modified on update
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    // Validate required fields exist
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate string length
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    // Validate URL format (must start with https:// or http://)
+    function isValidUrl(url) {
+      return url is string &&
+        (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // Validate email format
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // Validate ISO 8601 date string format (YYYY-MM-DDTHH:MM:SS)
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // Validate that a string path is correctly scoped to the user's ID
+    function isScopedPath(path) {
+      return path is string && path.matches("^users/" + request.auth.uid + "/.*");
+    }
+
+    // Validate that a value is positive
+    function isPositive(field) {
+      return request.resource.data[field] is number && request.resource.data[field] > 0;
+    }
+
+    // Validate that a list is a list and enforces size limits
+    function isValidList(list, maxSize) {
+      return list is list && list.size() <= maxSize;
+    }
+
+    // Validate optional string (if present, must be string and within length)
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    // Validate that a map contains only allowed keys
+    function isValidMap(mapData, allowedKeys) {
+      return mapData is map && mapData.keys().hasOnly(allowedKeys);
+    }
+
+    // Validate that the document contains only the allowed fields
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate that the document hasn't changed in the fields that are not allowed to be changed
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Get the user document
+    function getUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Check if the user belongs to the firm
+    function belongsToFirm(firmId) {
+      return isAuthenticated() && 
+             (isSuperAdmin() ||
+             (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.firmId == firmId));
+    }
+
+    // Check if the user is an admin
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          isSuperAdmin() ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roleLabel == 'مدير النظام')
+        );
+    }
+    
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.email == "elswa770@gmail.com";
+    }
+
+    // Check if the user has read access to a module
+    function hasReadAccess(moduleId) {
+      // Find permission for the module
+      // Note: Firestore rules don't have a built-in find/filter for lists of maps that returns the map.
+      // We have to iterate or assume a structure.
+      // For simplicity, if they are an admin, they have access.
+      // Otherwise, we'd need a more complex structure or custom claims.
+      // Let's assume admins have full access, others are restricted based on firmId for now.
+      return isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId));
+    }
+
+    // Check if the user has write access to a module
+    function hasWriteAccess(moduleId) {
+      return isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidFirm(data) {
+      return hasRequiredFields(['name', 'subscriptionStatus', 'subscriptionPlan', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.subscriptionStatus in ['active', 'inactive', 'trial'] &&
+             data.subscriptionPlan in ['basic', 'pro', 'enterprise'] &&
+             data.createdAt is string;
+    }
+
+    function isValidUser(data) {
+      return hasRequiredFields(['firmId', 'name', 'email', 'roleLabel', 'isActive', 'permissions']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             isValidEmail(data.email) &&
+             data.roleLabel is string && data.roleLabel.size() > 0 && data.roleLabel.size() < 50 &&
+             data.isActive is bool &&
+             data.permissions is list;
+    }
+
+    function isValidCase(data) {
+      return hasRequiredFields(['firmId', 'title', 'caseNumber', 'year', 'court', 'status', 'clientId', 'clientName']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.caseNumber is string && data.caseNumber.size() > 0 && data.caseNumber.size() < 50 &&
+             data.year is number && data.year > 1900 && data.year < 2100 &&
+             data.court is string && data.court.size() > 0 && data.court.size() < 100 &&
+             data.status in ['مفتوحة', 'مغلقة', 'مؤرشفة', 'حكم نهائي', 'قيد التنفيذ'] &&
+             data.clientId is string && data.clientId.size() > 0 &&
+             data.clientName is string && data.clientName.size() > 0 && data.clientName.size() < 100;
+    }
+
+    function isValidClient(data) {
+      return hasRequiredFields(['firmId', 'name', 'type', 'status', 'nationalId', 'phone']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.type in ['فرد', 'شركة'] &&
+             data.status in ['نشط', 'غير نشط'] &&
+             data.nationalId is string && data.nationalId.size() > 0 && data.nationalId.size() < 50 &&
+             data.phone is string && data.phone.size() > 0 && data.phone.size() < 20;
+    }
+
+    function isValidHearing(data) {
+      return hasRequiredFields(['firmId', 'caseId', 'date', 'type', 'status']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             data.caseId is string && data.caseId.size() > 0 &&
+             data.date is string && data.date.size() > 0 && data.date.size() < 20 &&
+             data.type in ['session', 'procedure'] &&
+             data.status in ['محددة', 'تمت', 'مؤجلة', 'ملغاة', 'حجز للحكم'];
+    }
+
+    function isValidHearingUpdate(data) {
+      return (!('firmId' in data) || (data.firmId is string && data.firmId.size() > 0)) &&
+             (!('caseId' in data) || (data.caseId is string && data.caseId.size() > 0)) &&
+             (!('date' in data) || (data.date is string && data.date.size() > 0 && data.date.size() < 20)) &&
+             (!('type' in data) || (data.type in ['session', 'procedure'])) &&
+             (!('status' in data) || (data.status in ['محددة', 'تمت', 'مؤجلة', 'ملغاة', 'حجز للحكم']));
+    }
+
+    function isValidUserUpdate(data) {
+      return (!('firmId' in data) || (data.firmId is string && data.firmId.size() > 0)) &&
+             (!('name' in data) || (data.name is string && data.name.size() > 0 && data.name.size() < 100)) &&
+             (!('email' in data) || (isValidEmail(data.email))) &&
+             (!('roleLabel' in data) || (data.roleLabel is string && data.roleLabel.size() > 0 && data.roleLabel.size() < 50)) &&
+             (!('isActive' in data) || (data.isActive is bool)) &&
+             (!('permissions' in data) || (data.permissions is list));
+    }
+
+    function isValidCaseUpdate(data) {
+      return (!('firmId' in data) || (data.firmId is string && data.firmId.size() > 0)) &&
+             (!('title' in data) || (data.title is string && data.title.size() > 0 && data.title.size() < 200)) &&
+             (!('caseNumber' in data) || (data.caseNumber is string && data.caseNumber.size() > 0 && data.caseNumber.size() < 50)) &&
+             (!('year' in data) || (data.year is number && data.year > 1900 && data.year < 2100)) &&
+             (!('court' in data) || (data.court is string && data.court.size() > 0 && data.court.size() < 100)) &&
+             (!('status' in data) || (data.status in ['مفتوحة', 'مغلقة', 'مؤرشفة', 'حكم نهائي', 'قيد التنفيذ'])) &&
+             (!('clientId' in data) || (data.clientId is string && data.clientId.size() > 0)) &&
+             (!('clientName' in data) || (data.clientName is string && data.clientName.size() > 0 && data.clientName.size() < 100));
+    }
+
+    function isValidClientUpdate(data) {
+      return (!('firmId' in data) || (data.firmId is string && data.firmId.size() > 0)) &&
+             (!('name' in data) || (data.name is string && data.name.size() > 0 && data.name.size() < 100)) &&
+             (!('type' in data) || (data.type in ['فرد', 'شركة'])) &&
+             (!('status' in data) || (data.status in ['نشط', 'غير نشط'])) &&
+             (!('nationalId' in data) || (data.nationalId is string && data.nationalId.size() > 0 && data.nationalId.size() < 50)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() > 0 && data.phone.size() < 20));
+    }
+
+    function isValidTaskUpdate(data) {
+      return (!('firmId' in data) || (data.firmId is string && data.firmId.size() > 0)) &&
+             (!('title' in data) || (data.title is string && data.title.size() > 0 && data.title.size() < 200)) &&
+             (!('dueDate' in data) || (data.dueDate is string && data.dueDate.size() > 0 && data.dueDate.size() < 20)) &&
+             (!('priority' in data) || (data.priority in ['low', 'medium', 'high'])) &&
+             (!('status' in data) || (data.status in ['pending', 'in_progress', 'completed']));
+    }
+
+    function isValidAppointmentUpdate(data) {
+      return (!('firmId' in data) || (data.firmId is string && data.firmId.size() > 0)) &&
+             (!('title' in data) || (data.title is string && data.title.size() > 0 && data.title.size() < 200)) &&
+             (!('date' in data) || (data.date is string && data.date.size() > 0 && data.date.size() < 20)) &&
+             (!('startTime' in data) || (data.startTime is string && data.startTime.size() > 0 && data.startTime.size() < 10)) &&
+             (!('endTime' in data) || (data.endTime is string && data.endTime.size() > 0 && data.endTime.size() < 10)) &&
+             (!('type' in data) || (data.type in ['meeting', 'court', 'client', 'video_call', 'phone_call', 'internal', 'other'])) &&
+             (!('priority' in data) || (data.priority in ['low', 'medium', 'high'])) &&
+             (!('status' in data) || (data.status in ['scheduled', 'in_progress', 'completed', 'cancelled', 'postponed']));
+    }
+
+    function isValidLawyerUpdate(data) {
+      return (!('firmId' in data) || (data.firmId is string && data.firmId.size() > 0)) &&
+             (!('name' in data) || (data.name is string && data.name.size() > 0 && data.name.size() < 100)) &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() > 0 && data.phone.size() < 20)) &&
+             (!('governorate' in data) || (data.governorate is string && data.governorate.size() > 0 && data.governorate.size() < 50)) &&
+             (!('barLevel' in data) || (data.barLevel in ['general', 'primary', 'appeal', 'cassation'])) &&
+             (!('salary' in data) || (data.salary is number && data.salary >= 0)) &&
+             (!('joinDate' in data) || (data.joinDate is string && data.joinDate.size() > 0 && data.joinDate.size() < 20)) &&
+             (!('status' in data) || (data.status in ['active', 'inactive']));
+    }
+
+    function isValidActivityLogUpdate(data) {
+      return (!('firmId' in data) || (data.firmId is string && data.firmId.size() > 0)) &&
+             (!('user' in data) || (data.user is string && data.user.size() > 0 && data.user.size() < 100)) &&
+             (!('action' in data) || (data.action is string && data.action.size() > 0 && data.action.size() < 100)) &&
+             (!('target' in data) || (data.target is string && data.target.size() > 0 && data.target.size() < 100)) &&
+             (!('timestamp' in data) || (data.timestamp is string && data.timestamp.size() > 0 && data.timestamp.size() < 30));
+    }
+
+    function isValidLegalReferenceUpdate(data) {
+      return (!('firmId' in data) || (data.firmId is string && data.firmId.size() > 0)) &&
+             (!('title' in data) || (data.title is string && data.title.size() > 0 && data.title.size() < 200)) &&
+             (!('type' in data) || (data.type in ['law', 'ruling', 'encyclopedia', 'regulation'])) &&
+             (!('branch' in data) || (data.branch in ['civil', 'criminal', 'administrative', 'commercial', 'family', 'labor', 'other']));
+    }
+
+    function isValidTask(data) {
+      return hasRequiredFields(['firmId', 'title', 'dueDate', 'priority', 'status']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.dueDate is string && data.dueDate.size() > 0 && data.dueDate.size() < 20 &&
+             data.priority in ['low', 'medium', 'high'] &&
+             data.status in ['pending', 'in_progress', 'completed'];
+    }
+
+    function isValidAppointment(data) {
+      return hasRequiredFields(['firmId', 'title', 'date', 'startTime', 'endTime', 'type', 'priority', 'status']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.date is string && data.date.size() > 0 && data.date.size() < 20 &&
+             data.startTime is string && data.startTime.size() > 0 && data.startTime.size() < 10 &&
+             data.endTime is string && data.endTime.size() > 0 && data.endTime.size() < 10 &&
+             data.type in ['meeting', 'court', 'client', 'video_call', 'phone_call', 'internal', 'other'] &&
+             data.priority in ['low', 'medium', 'high'] &&
+             data.status in ['scheduled', 'in_progress', 'completed', 'cancelled', 'postponed'];
+    }
+
+    function isValidLawyer(data) {
+      return hasRequiredFields(['firmId', 'name', 'phone', 'governorate', 'barLevel', 'salary', 'joinDate', 'status']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.phone is string && data.phone.size() > 0 && data.phone.size() < 20 &&
+             data.governorate is string && data.governorate.size() > 0 && data.governorate.size() < 50 &&
+             data.barLevel in ['general', 'primary', 'appeal', 'cassation'] &&
+             data.salary is number && data.salary >= 0 &&
+             data.joinDate is string && data.joinDate.size() > 0 && data.joinDate.size() < 20 &&
+             data.status in ['active', 'inactive'];
+    }
+
+    function isValidActivityLog(data) {
+      return hasRequiredFields(['firmId', 'user', 'action', 'target', 'timestamp']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             data.user is string && data.user.size() > 0 && data.user.size() < 100 &&
+             data.action is string && data.action.size() > 0 && data.action.size() < 100 &&
+             data.target is string && data.target.size() > 0 && data.target.size() < 100 &&
+             data.timestamp is string && data.timestamp.size() > 0 && data.timestamp.size() < 30;
+    }
+
+    function isValidLegalReference(data) {
+      return hasRequiredFields(['title', 'type', 'branch']) &&
+             (!('firmId' in data) || (data.firmId is string && data.firmId.size() > 0)) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.type in ['law', 'ruling', 'encyclopedia', 'regulation'] &&
+             data.branch in ['civil', 'criminal', 'administrative', 'commercial', 'family', 'labor', 'other'];
+    }
+
+    function isValidFirmSettings(data) {
+      return hasRequiredFields(['firmId']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             (!('generalSettings' in data) || data.generalSettings is string) &&
+             (!('securitySettings' in data) || data.securitySettings is string) &&
+             (!('notificationSettings' in data) || data.notificationSettings is string) &&
+             (!('dataSettings' in data) || data.dataSettings is string);
+    }
+
+    function isValidNotificationSettings(data) {
+      return hasRequiredFields(['firmId']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             // Optional fields - make them truly optional
+             (!('enableEmailNotifications' in data) || data.enableEmailNotifications is bool) &&
+             (!('enableSystemNotifications' in data) || data.enableSystemNotifications is bool) &&
+             (!('smtp' in data) || (data.smtp is map)) &&
+             (!('fromEmail' in data) || (data.fromEmail is string && data.fromEmail.size() > 0)) &&
+             (!('fromName' in data) || (data.fromName is string && data.fromName.size() > 0));
+    }
+
+    function isValidDataSettings(data) {
+      return hasRequiredFields(['firmId']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             // Optional fields
+             (!('autoBackup' in data) || (data.autoBackup is string && data.autoBackup.size() > 0)) &&
+             (!('dataRetention' in data) || (data.dataRetention is string && data.dataRetention.size() > 0)) &&
+             (!('maxFileSize' in data) || (data.maxFileSize is number && data.maxFileSize > 0)) &&
+             (!('allowedFileTypes' in data) || (data.allowedFileTypes is list && data.allowedFileTypes.size() > 0));
+    }
+
+    function isValidSecuritySettings(data) {
+      return hasRequiredFields(['firmId']) &&
+             data.firmId is string && data.firmId.size() > 0 &&
+             // Optional fields
+             (!('sessionTimeout' in data) || (data.sessionTimeout is number && data.sessionTimeout > 0)) &&
+             (!('maxLoginAttempts' in data) || (data.maxLoginAttempts is number && data.maxLoginAttempts > 0)) &&
+             (!('passwordComplexity' in data) || (data.passwordComplexity is string && data.passwordComplexity.size() > 0)) &&
+             (!('twoFactorAuth' in data) || data.twoFactorAuth is bool);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /firms/{firmId} {
+      allow read: if isAuthenticated() && (belongsToFirm(firmId) || isAdmin() || isSuperAdmin());
+      allow create: if isAuthenticated() && isValidFirm(request.resource.data);
+      allow update: if isAuthenticated() && isValidFirm(request.resource.data) && (belongsToFirm(firmId) || isAdmin() || isSuperAdmin());
+    }
+
+    match /settings/{settingId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow create: if isAuthenticated() && isValidFirmSettings(request.resource.data) && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow update: if isAuthenticated() && isValidFirmSettings(request.resource.data) && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+    }
+
+    match /notificationSettings/{settingId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow create: if isAuthenticated() && isValidNotificationSettings(request.resource.data) && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow update: if isAuthenticated() && isValidNotificationSettings(request.resource.data) && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+    }
+
+    match /dataSettings/{settingId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow create: if isAuthenticated() && isValidDataSettings(request.resource.data) && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow update: if isAuthenticated() && isValidDataSettings(request.resource.data) && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+    }
+
+    match /securitySettings/{settingId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow create: if isAuthenticated() && isValidSecuritySettings(request.resource.data) && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow update: if isAuthenticated() && isValidSecuritySettings(request.resource.data) && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || belongsToFirm(settingId));
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)) || (request.auth.uid == userId && !exists(/databases/$(database)/documents/users/$(userId))));
+      allow update: if isAuthenticated() && isValidUserUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    match /cases/{caseId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && isValidCase(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
+      allow update: if isAuthenticated() && isValidCaseUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    match /clients/{clientId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && isValidClient(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
+      allow update: if isAuthenticated() && isValidClientUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    match /hearings/{hearingId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && isValidHearing(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
+      allow update: if isAuthenticated() && isValidHearingUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    match /tasks/{taskId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && isValidTask(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
+      allow update: if isAuthenticated() && isValidTaskUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    match /appointments/{appointmentId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && isValidAppointment(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
+      allow update: if isAuthenticated() && isValidAppointmentUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    match /lawyers/{lawyerId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && isValidLawyer(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
+      allow update: if isAuthenticated() && isValidLawyerUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    match /activities/{activityId} {
+      allow list: if isAuthenticated() && (isSuperAdmin() || isAdmin());
+      allow get: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && isValidActivityLog(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
+      allow update: if isAuthenticated() && isValidActivityLogUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    match /references/{referenceId} {
+      // References can be global (no firmId) or firm-specific
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || resource == null || !('firmId' in resource.data) || belongsToFirm(resource.data.firmId));
+      allow create: if isAuthenticated() && isValidLegalReference(request.resource.data) && (isSuperAdmin() || isAdmin() || !('firmId' in request.resource.data) || belongsToFirm(request.resource.data.firmId));
+      allow update: if isAuthenticated() && isValidLegalReferenceUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || resource == null || !('firmId' in resource.data) || belongsToFirm(resource.data.firmId));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || resource == null || !('firmId' in resource.data) || belongsToFirm(resource.data.firmId));
+    }
+  }
+}

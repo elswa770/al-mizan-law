@@ -1,0 +1,174 @@
+import { useState, useEffect } from 'react';
+import { offlineManager, OfflineStatus } from '../services/offlineManager';
+
+// React hook for offline status
+export const useOfflineStatus = (): OfflineStatus | null => {
+  const [status, setStatus] = useState<OfflineStatus | null>(null);
+
+  useEffect(() => {
+    const updateStatus = async () => {
+      const currentStatus = await offlineManager.getOfflineStatus();
+      setStatus(currentStatus);
+    };
+
+    updateStatus();
+    offlineManager.onStatusChange(setStatus);
+
+    const interval = setInterval(updateStatus, 30000); // Update every 30 seconds
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+
+  return status;
+};
+
+// React hook for offline actions
+export const useOfflineActions = () => {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = async () => {
+      console.log('🌐 Network connection restored');
+      setIsOnline(true);
+      
+      // Auto-sync when coming back online
+      try {
+        console.log('🔄 Auto-syncing pending actions...');
+        await offlineManager.syncPendingActions();
+        console.log('✅ Auto-sync completed');
+      } catch (error) {
+        console.error('❌ Auto-sync failed:', error);
+      }
+    };
+    const handleOffline = () => {
+      console.log('📱 Network connection lost');
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // More reliable connection check
+    const checkConnection = async () => {
+      try {
+        // Try to fetch a small resource to check real connectivity
+        const response = await fetch('https://www.google.com/images/cleardot.gif', {
+          method: 'HEAD',
+          mode: 'no-cors',
+          cache: 'no-cache',
+          signal: AbortSignal.timeout(2000) // 2 second timeout
+        });
+        
+        // If we get here, we have some form of connectivity
+        const online = navigator.onLine;
+        console.log('🔍 Connection check:', online ? 'Online' : 'Offline');
+        
+        // Always update state first
+        setIsOnline(online);
+        
+        // If we're online, check if there are pending actions before syncing
+        if (online) {
+          try {
+            const status = await offlineManager.getOfflineStatus();
+            if (status && status.pendingActions && status.pendingActions > 0) {
+              console.log('🔄 Connection detected - Auto-syncing pending actions...');
+              await offlineManager.syncPendingActions();
+              console.log('✅ Auto-sync completed');
+            } else {
+              console.log('ℹ️ No pending actions to sync');
+            }
+          } catch (error) {
+            console.error('❌ Auto-sync failed:', error);
+          }
+        }
+      } catch (error) {
+        // Network error - definitely offline
+        console.log('🔍 Connection check: Offline (network error)');
+        setIsOnline(false);
+      }
+    };
+
+    // Check every 30 seconds to avoid too frequent checks and console spam
+    const interval = setInterval(checkConnection, 30000);
+
+    // Initial check
+    checkConnection();
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const syncNow = async () => {
+    try {
+      await offlineManager.syncPendingActions();
+      return true;
+    } catch (error) {
+      console.error('Sync failed:', error);
+      return false;
+    }
+  };
+
+  const clearCache = async () => {
+    try {
+      await offlineManager.clearCache();
+      return true;
+    } catch (error) {
+      console.error('Clear cache failed:', error);
+      return false;
+    }
+  };
+
+  const clearPendingActions = async () => {
+    try {
+      await offlineManager.clearPendingActions();
+      return true;
+    } catch (error) {
+      console.error('Clear pending actions failed:', error);
+      return false;
+    }
+  };
+
+  const clearAllData = async () => {
+    try {
+      await offlineManager.clearAllData();
+      return true;
+    } catch (error) {
+      console.error('Clear all data failed:', error);
+      return false;
+    }
+  };
+
+  const exportData = async () => {
+    try {
+      return await offlineManager.exportData();
+    } catch (error) {
+      console.error('Export failed:', error);
+      return null;
+    }
+  };
+
+  const importData = async (data: any) => {
+    try {
+      await offlineManager.importData(data);
+      return true;
+    } catch (error) {
+      console.error('Import failed:', error);
+      return false;
+    }
+  };
+
+  return {
+    isOnline,
+    syncNow,
+    clearCache,
+    clearPendingActions,
+    clearAllData,
+    exportData,
+    importData
+  };
+};

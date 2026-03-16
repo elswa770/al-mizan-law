@@ -1,0 +1,1364 @@
+
+import React, { useState, useRef, useEffect } from 'react';
+import { Case, Client, Hearing, CaseStatus, CaseDocument, FinancialTransaction, PaymentMethod, CaseStageType, CaseStage, Task } from '../types';
+import { calculateLegalDeadline } from '../utils/legalDeadlines';
+import AddHearingModal from '../components/AddHearingModal';
+import { googleDriveService } from '../src/services/googleDriveService';
+import { ArrowRight, Edit3, Calendar, FileText, Briefcase, MapPin, User, Shield, Save, X, Activity, DollarSign, Clock, CheckCircle, AlertCircle, Phone, Gavel, MoreVertical, Plus, Upload, FileCheck, Eye, Trash2, Wallet, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownLeft, Calculator, Edit, Users, GitCommit, CheckSquare, Bell, Cloud, LogIn, Wifi, WifiOff } from 'lucide-react';
+import { offlineManager } from '../services/offlineManager';
+
+interface CaseDetailsProps {
+  caseId: string;
+  cases: Case[];
+  clients: Client[];
+  hearings: Hearing[];
+  currentUser?: any;
+  onBack: () => void;
+  onAddHearing?: (hearing: Hearing) => void;
+  onUpdateCase?: (updatedCase: Case) => void;
+  onUpdateHearing?: (hearing: Hearing) => void;
+  onAddTask?: (task: Task) => void;
+  onClientClick?: (clientId: string) => void;
+  readOnly?: boolean;
+}
+
+const CaseDetails: React.FC<CaseDetailsProps> = ({ caseId, cases, clients, hearings, currentUser, onBack, onAddHearing, onUpdateCase, onUpdateHearing, onAddTask, onClientClick, readOnly = false }) => {
+  const currentCase = cases.find(c => c.id === caseId);
+  const [offlineStatus, setOfflineStatus] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'hearings' | 'documents' | 'finance' | 'stages'>('overview');
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isAddHearingModalOpen, setIsAddHearingModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Load offline status on mount
+  useEffect(() => {
+    const loadOfflineStatus = async () => {
+      try {
+        const status = await offlineManager.getOfflineStatus();
+        setOfflineStatus(status);
+      } catch (error) {
+        console.error('Failed to load offline status:', error);
+      }
+    };
+    loadOfflineStatus();
+
+    // Listen for offline status changes
+    const unsubscribe = offlineManager.onStatusChange((status) => {
+      setOfflineStatus(status);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const handleSaveHearing = (hearing: Hearing, task?: Task) => {
+    if (onAddHearing) {
+      onAddHearing(hearing);
+    }
+    if (task && onAddTask) {
+      onAddTask(task);
+    }
+    setIsAddHearingModalOpen(false);
+  };
+  
+  // Edit State
+  const [editCaseData, setEditCaseData] = useState<Partial<Case>>({});
+  // Opponent Edit State (Simulate primary opponent editing)
+  const [editOpponentName, setEditOpponentName] = useState('');
+  const [editOpponentLawyer, setEditOpponentLawyer] = useState('');
+
+  // Documents State
+  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
+  const [isUploadingToDrive, setIsUploadingToDrive] = useState(false);
+  const [useGoogleDrive, setUseGoogleDrive] = useState(false);
+  const [newDocData, setNewDocData] = useState<{name: string, type: string, category: string, file: File | null}>({ name: '', type: 'pdf', category: 'other', file: null });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Finance State
+  const [isTransModalOpen, setIsTransModalOpen] = useState(false);
+  const [transData, setTransData] = useState({ amount: 0, type: 'payment' as 'payment' | 'expense', description: '' });
+  
+  // Fees Edit State
+  const [isFeesModalOpen, setIsFeesModalOpen] = useState(false);
+  const [newFeeValue, setNewFeeValue] = useState<number>(0);
+
+  // Stage Update State
+  const [isStageModalOpen, setIsStageModalOpen] = useState(false);
+  const [selectedStageType, setSelectedStageType] = useState<CaseStageType | null>(null);
+  const [stageUpdateData, setStageUpdateData] = useState<Partial<CaseStage>>({});
+
+  if (!currentCase) return <div className="p-8 text-center text-slate-500">القضية غير موجودة</div>;
+  
+  const caseHearings = hearings.filter(h => h.caseId === caseId).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const nextHearing = caseHearings.find(h => new Date(h.date) >= new Date(new Date().setHours(0,0,0,0))) || caseHearings[0];
+  const client = clients.find(c => c.id === currentCase.clientId);
+
+  // Financials Calculations
+  const totalAgreed = currentCase.finance?.agreedFees || 0;
+  const totalPaid = currentCase.finance?.paidAmount || 0;
+  const totalExpenses = currentCase.finance?.expenses || 0;
+  const remainingDues = totalAgreed - totalPaid;
+  const netIncome = totalPaid - totalExpenses;
+  const paymentProgress = totalAgreed > 0 ? (totalPaid / totalAgreed) * 100 : 0;
+
+  // --- Handlers ---
+
+  const handleEditOpen = () => {
+    setEditCaseData({ ...currentCase });
+    // Load existing opponent data if any
+    const primaryOpponent = currentCase.opponents && currentCase.opponents.length > 0 ? currentCase.opponents[0] : null;
+    setEditOpponentName(primaryOpponent?.name || '');
+    setEditOpponentLawyer(primaryOpponent?.lawyer || '');
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onUpdateCase || !editCaseData.title) return;
+    
+    setIsSubmitting(true);
+    
+    try {
+      // Update opponents list
+      const updatedOpponents = editOpponentName 
+        ? [{ name: editOpponentName, role: 'خصم', lawyer: editOpponentLawyer }] 
+        : [];
+
+      const updatedCase = { 
+        ...currentCase, 
+        ...editCaseData, 
+        opponents: updatedOpponents 
+      };
+
+      // If online, update directly, otherwise queue for offline sync
+      if (offlineStatus?.online) {
+        onUpdateCase(updatedCase);
+      } else {
+        // Queue for offline sync
+        await offlineManager.addPendingAction({
+          type: 'update',
+          entity: 'case',
+          data: updatedCase
+        });
+        
+        // Update local state immediately for offline experience
+        onUpdateCase(updatedCase);
+        
+        console.log('📴 Case update queued for offline sync:', updatedCase.title);
+      }
+      
+      setIsEditModalOpen(false);
+      setEditCaseData({});
+      setEditOpponentName('');
+      setEditOpponentLawyer('');
+    } catch (error) {
+      console.error('Error updating case:', error);
+      // Show error message to user
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Document Handlers
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+       const file = e.target.files[0];
+       let type = 'other';
+       if (file.type.includes('pdf')) type = 'pdf';
+       else if (file.type.includes('image')) type = 'image';
+       else if (file.type.includes('word')) type = 'word';
+       
+       setNewDocData({ ...newDocData, file, type, name: file.name });
+    }
+  };
+
+  const handleSaveDocument = async (e: React.FormEvent) => {
+     e.preventDefault();
+     if (!onUpdateCase || !newDocData.file) return;
+
+     let fileUrl = URL.createObjectURL(newDocData.file);
+     let driveFileId = undefined;
+
+     if (useGoogleDrive) {
+       if (!googleDriveService.isSignedIn()) {
+         try {
+           await googleDriveService.signIn();
+         } catch (err: any) {
+           alert(err.message || 'فشل تسجيل الدخول إلى Google Drive');
+           return;
+         }
+       }
+
+       setIsUploadingToDrive(true);
+       try {
+         const folderName = `القضية - ${currentCase.title} - ${currentCase.caseNumber}`;
+         const response = await googleDriveService.uploadFile(newDocData.file, folderName);
+         fileUrl = response.webViewLink;
+         driveFileId = response.fileId;
+       } catch (err: any) {
+         alert('فشل الرفع إلى Google Drive: ' + err.message);
+         setIsUploadingToDrive(false);
+         return;
+       }
+       setIsUploadingToDrive(false);
+     }
+
+     const newDoc: CaseDocument = {
+        id: Math.random().toString(36).substring(2, 9),
+        name: newDocData.name,
+        type: newDocData.type as any,
+        category: newDocData.category as any,
+        url: fileUrl,
+        uploadDate: new Date().toISOString().split('T')[0],
+        size: `${(newDocData.file.size / 1024).toFixed(1)} KB`,
+        isOriginal: false
+     };
+
+     onUpdateCase({ ...currentCase, documents: [...(currentCase.documents || []), newDoc] });
+     setIsDocModalOpen(false);
+     setNewDocData({ name: '', type: 'pdf', category: 'other', file: null });
+     setUseGoogleDrive(false);
+  };
+
+  // Finance Handlers
+  const handleSaveTransaction = (e: React.FormEvent) => {
+     e.preventDefault();
+     if (!onUpdateCase) return;
+
+     const newTrans: FinancialTransaction = {
+        id: Math.random().toString(36).substring(2, 9),
+        date: new Date().toISOString().split('T')[0],
+        amount: Number(transData.amount),
+        type: transData.type,
+        description: transData.description,
+        recordedBy: 'المحامي'
+     };
+
+     const newFinance = { ...(currentCase.finance || { agreedFees: 0, paidAmount: 0, expenses: 0, history: [] }) };
+     newFinance.history = [...(newFinance.history || []), newTrans];
+     
+     if (transData.type === 'payment') newFinance.paidAmount += Number(transData.amount);
+     else newFinance.expenses += Number(transData.amount);
+
+     onUpdateCase({ ...currentCase, finance: newFinance });
+     setIsTransModalOpen(false);
+     setTransData({ amount: 0, type: 'payment', description: '' });
+  };
+
+  const handleUpdateAgreedFees = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onUpdateCase) return;
+
+    const newFinance = { 
+        ...(currentCase.finance || { agreedFees: 0, paidAmount: 0, expenses: 0, history: [] }),
+        agreedFees: Number(newFeeValue)
+    };
+
+    onUpdateCase({ ...currentCase, finance: newFinance });
+    setIsFeesModalOpen(false);
+  };
+
+  const openFeesModal = () => {
+      setNewFeeValue(totalAgreed);
+      setIsFeesModalOpen(true);
+  };
+
+  // Stage Handlers
+  const handleOpenStageModal = (type: CaseStageType) => {
+    const existingStage = currentCase.stages?.find(s => s.type === type);
+    setSelectedStageType(type);
+    setStageUpdateData(existingStage || { type, status: 'pending' });
+    setIsStageModalOpen(true);
+  };
+
+  const handleSaveStage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!onUpdateCase || !selectedStageType) return;
+
+    const currentStages = currentCase.stages || [];
+    const otherStages = currentStages.filter(s => s.type !== selectedStageType);
+    
+    const updatedStage: CaseStage = {
+      type: selectedStageType,
+      status: stageUpdateData.status as any || 'pending',
+      date: stageUpdateData.date,
+      notes: stageUpdateData.notes,
+      location: stageUpdateData.location,
+      referenceNumber: stageUpdateData.referenceNumber,
+      officer: stageUpdateData.officer,
+      details: stageUpdateData.details
+    };
+
+    onUpdateCase({
+      ...currentCase,
+      stages: [...otherStages, updatedStage]
+    });
+    
+    // Automatic Deadline Calculation
+    if (selectedStageType === CaseStageType.JUDGMENT && updatedStage.date && onAddTask) {
+      const deadline = calculateLegalDeadline(updatedStage.date, currentCase.caseType || 'civil'); // Default to civil if not set
+      
+      if (deadline) {
+        // Check if task already exists to avoid duplicates (simple check)
+        // In a real app, we might check by a specific tag or ID
+        const confirmAdd = window.confirm(`بناءً على تاريخ الحكم (${updatedStage.date})، الموعد النهائي للاستئناف هو ${deadline.date}.\n\nهل تريد إضافة تذكير (مهمة) لهذا الموعد تلقائياً؟`);
+        
+        if (confirmAdd) {
+          const newTask: Task = {
+            id: Math.random().toString(36).substring(2, 9),
+            title: deadline.title,
+            description: deadline.description,
+            dueDate: deadline.date,
+            priority: 'high',
+            status: 'pending',
+            relatedCaseId: currentCase.id,
+            assignedTo: currentCase.assignedLawyerId || 'unassigned',
+            firmId: currentUser?.firmId || 'default' // Use current user's firmId
+          };
+          onAddTask(newTask);
+        }
+      }
+    }
+
+    setIsStageModalOpen(false);
+  };
+
+  const getStatusBadgeColor = (status: CaseStatus) => {
+    switch (status) {
+      case CaseStatus.OPEN: return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800';
+      case CaseStatus.CLOSED: return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600';
+      case CaseStatus.JUDGMENT: return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800';
+      default: return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-700 dark:text-gray-300';
+    }
+  };
+
+  const getFileIcon = (type: string) => {
+    if (type.includes('pdf')) return <FileText className="w-8 h-8 text-red-500" />;
+    if (type.includes('image')) return <FileText className="w-8 h-8 text-purple-500" />; // Or ImageIcon
+    return <FileText className="w-8 h-8 text-slate-400" />;
+  };
+
+  // --- Render Sections ---
+
+  const renderStagesTab = () => {
+    // Define the standard flow of stages
+    const standardStages: CaseStageType[] = [
+      CaseStageType.POLICE_REPORT,
+      CaseStageType.PROSECUTION,
+      CaseStageType.COURT_FILING,
+      CaseStageType.TRIAL,
+      CaseStageType.JUDGMENT,
+      CaseStageType.APPEAL,
+      CaseStageType.CASSATION,
+      CaseStageType.ENFORCEMENT
+    ];
+
+    // Get current stages or initialize empty
+    const currentStages = currentCase.stages || [];
+
+    return (
+      <div className="space-y-6 animate-in fade-in">
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <GitCommit className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /> مسار القضية
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">تتبع مراحل القضية من البداية حتى التنفيذ</p>
+            </div>
+          </div>
+
+          <div className="relative">
+            {/* Vertical Line */}
+            <div className="absolute right-[19px] top-4 bottom-4 w-0.5 bg-slate-200 dark:bg-slate-700"></div>
+
+            <div className="space-y-8 relative">
+              {standardStages.map((stageType, index) => {
+                const stageData = currentStages.find(s => s.type === stageType);
+                const status = stageData?.status || 'pending';
+                const isCompleted = status === 'completed';
+                const isInProgress = status === 'in_progress';
+                const isSkipped = status === 'skipped';
+
+                let statusColor = 'bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400';
+                let icon = <div className="w-2 h-2 rounded-full bg-slate-400"></div>;
+
+                if (isCompleted) {
+                  statusColor = 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200 dark:border-green-800';
+                  icon = <CheckCircle className="w-5 h-5" />;
+                } else if (isInProgress) {
+                  statusColor = 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800';
+                  icon = <Activity className="w-5 h-5 animate-pulse" />;
+                } else if (isSkipped) {
+                  statusColor = 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500 border-gray-200 dark:border-gray-700';
+                  icon = <X className="w-4 h-4" />;
+                }
+
+                return (
+                  <div key={index} className={`relative flex gap-6 ${status === 'pending' ? 'opacity-60' : ''}`}>
+                    {/* Timeline Node */}
+                    <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-4 border-white dark:border-slate-800 ${isCompleted ? 'bg-green-500 text-white' : isInProgress ? 'bg-blue-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-400'}`}>
+                      {isCompleted ? <CheckCircle className="w-5 h-5" /> : isInProgress ? <Clock className="w-5 h-5" /> : <div className="w-3 h-3 rounded-full bg-current opacity-50"></div>}
+                    </div>
+
+                    {/* Content */}
+                    <div className={`flex-1 p-4 rounded-xl border ${isCompleted || isInProgress ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm' : 'bg-slate-50 dark:bg-slate-900/30 border-transparent'}`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className={`font-bold text-lg ${isCompleted || isInProgress ? 'text-slate-800 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
+                          {stageType}
+                        </h4>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${statusColor}`}>
+                          {status === 'completed' ? 'مكتملة' : status === 'in_progress' ? 'جارية' : status === 'skipped' ? 'تم التجاوز' : 'معلقة'}
+                        </span>
+                      </div>
+
+                      {stageData && (
+                        <div className="space-y-2 mt-3">
+                          {stageData.date && (
+                            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                              <Calendar className="w-4 h-4 text-slate-400" />
+                              <span>{stageData.date}</span>
+                            </div>
+                          )}
+                          {stageData.location && (
+                            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                              <MapPin className="w-4 h-4 text-slate-400" />
+                              <span>{stageData.location}</span>
+                            </div>
+                          )}
+                          {stageData.referenceNumber && (
+                            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                              <FileText className="w-4 h-4 text-slate-400" />
+                              <span className="font-mono bg-slate-100 dark:bg-slate-700 px-1.5 rounded text-xs">{stageData.referenceNumber}</span>
+                            </div>
+                          )}
+                          {stageData.officer && (
+                            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                              <User className="w-4 h-4 text-slate-400" />
+                              <span>{stageData.officer}</span>
+                            </div>
+                          )}
+                          {stageData.details && (
+                            <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                              <span className="font-bold text-slate-700 dark:text-slate-200">تفاصيل: </span>
+                              {stageData.details}
+                            </div>
+                          )}
+                          {stageData.notes && (
+                            <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg text-sm text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-slate-700/50">
+                              {stageData.notes}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Action Buttons */}
+                      {!readOnly && (
+                        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-end">
+                          <button 
+                            onClick={() => handleOpenStageModal(stageType)}
+                            className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1"
+                          >
+                            <Edit3 className="w-3 h-3" /> تحديث الحالة
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderOverview = () => (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
+       {/* Left Column: Stats & Strategy */}
+       <div className="lg:col-span-2 space-y-6">
+          {/* Stats Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+             <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
+                   <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                   <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mb-0.5">الجلسة القادمة</p>
+                   <p className="font-bold text-slate-800 dark:text-white text-sm">
+                      {nextHearing && new Date(nextHearing.date) >= new Date() ? nextHearing.date : 'لا توجد جلسات قادمة'}
+                   </p>
+                </div>
+             </div>
+             
+             <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                   <DollarSign className="w-5 h-5" />
+                </div>
+                <div>
+                   <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mb-0.5">المدفوعات</p>
+                   <div className="flex items-center gap-2">
+                      <p className="font-bold text-slate-800 dark:text-white text-sm">{totalPaid.toLocaleString()}</p>
+                      <span className="text-[10px] text-slate-400">/ {totalAgreed.toLocaleString()}</span>
+                   </div>
+                   <div className="w-full bg-slate-100 dark:bg-slate-700 h-1 mt-1.5 rounded-full overflow-hidden">
+                      <div className="bg-emerald-500 h-full rounded-full" style={{width: `${paymentProgress}%`}}></div>
+                   </div>
+                </div>
+             </div>
+
+             <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
+                <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg">
+                   <Activity className="w-5 h-5" />
+                </div>
+                <div>
+                   <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mb-0.5">عدد الجلسات</p>
+                   <p className="font-bold text-slate-800 dark:text-white text-sm">{caseHearings.length} جلسة</p>
+                </div>
+             </div>
+          </div>
+
+          {/* Strategy / Description Card */}
+          <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+             <h3 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
+                <Briefcase className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                ملخص واستراتيجية القضية
+             </h3>
+             <div className="space-y-4">
+                <div>
+                   <span className="text-xs font-bold text-slate-500 dark:text-slate-400 block mb-1">وصف الدعوى</span>
+                   <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                      {currentCase.description || 'لم يتم إضافة وصف لهذه القضية.'}
+                   </p>
+                </div>
+                
+                {currentCase.strategy && (
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 bg-slate-50 dark:bg-slate-900/30 p-4 rounded-lg border border-slate-100 dark:border-slate-700">
+                      <div>
+                         <span className="text-xs font-bold text-green-600 dark:text-green-400 block mb-1 flex items-center gap-1"><CheckCircle className="w-3 h-3"/> نقاط القوة</span>
+                         <p className="text-xs text-slate-600 dark:text-slate-400">{currentCase.strategy.strengthPoints || '-'}</p>
+                      </div>
+                      <div>
+                         <span className="text-xs font-bold text-red-500 dark:text-red-400 block mb-1 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> الثغرات / نقاط الضعف</span>
+                         <p className="text-xs text-slate-600 dark:text-slate-400">{currentCase.strategy.weaknessPoints || '-'}</p>
+                      </div>
+                   </div>
+                )}
+             </div>
+          </div>
+       </div>
+
+       {/* Right Column: Court, Client & Opponent Info */}
+       <div className="space-y-6">
+          {/* Client Card */}
+          <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
+             <div className="absolute top-0 right-0 w-1 h-full bg-indigo-500"></div>
+             <div className="flex justify-between items-start mb-4">
+                <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                   <User className="w-4 h-4 text-slate-400" /> الموكل
+                </h4>
+                <button onClick={() => onClientClick && onClientClick(currentCase.clientId)} className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline">عرض الملف</button>
+             </div>
+             
+             <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-300 font-bold text-lg">
+                   {currentCase.clientName.charAt(0)}
+                </div>
+                <div>
+                   <p className="font-bold text-slate-800 dark:text-white">{currentCase.clientName}</p>
+                   <p className="text-xs text-slate-500 dark:text-slate-400">{currentCase.clientRole}</p>
+                </div>
+             </div>
+             
+             {client && (
+                <div className="space-y-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                   <a href={`tel:${client.phone}`} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-colors">
+                      <Phone className="w-3 h-3" /> {client.phone}
+                   </a>
+                </div>
+             )}
+          </div>
+
+          {/* Opponent Card (New) */}
+          <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
+             <div className="absolute top-0 right-0 w-1 h-full bg-red-500"></div> {/* Red stripe for opponent */}
+             <div className="flex justify-between items-start mb-4">
+                <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                   <Users className="w-4 h-4 text-slate-400" /> الخصوم
+                </h4>
+             </div>
+             
+             {currentCase.opponents && currentCase.opponents.length > 0 ? (
+                <div className="space-y-4">
+                   {currentCase.opponents.map((opp, idx) => (
+                      <div key={idx} className={idx > 0 ? "pt-3 border-t border-slate-100 dark:border-slate-700" : ""}>
+                         <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center text-red-500 dark:text-red-400 font-bold text-lg">
+                               {opp.name.charAt(0)}
+                            </div>
+                            <div>
+                               <p className="font-bold text-slate-800 dark:text-white">{opp.name}</p>
+                               <p className="text-xs text-slate-500 dark:text-slate-400">{opp.role || 'خصم'}</p>
+                            </div>
+                         </div>
+                         {opp.lawyer && (
+                            <div className="bg-slate-50 dark:bg-slate-700/50 p-2 rounded-lg text-xs flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                               <Gavel className="w-3 h-3 text-slate-400" />
+                               <span>محامي الخصم: <span className="font-bold">{opp.lawyer}</span></span>
+                            </div>
+                         )}
+                      </div>
+                   ))}
+                </div>
+             ) : (
+                <div className="text-center py-4 text-slate-400 text-xs">
+                   لم يتم تسجيل بيانات الخصم
+                </div>
+             )}
+          </div>
+
+          {/* Court Info */}
+          <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+             <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                <Gavel className="w-4 h-4 text-slate-400" /> بيانات المحكمة
+             </h4>
+             <div className="space-y-3">
+                <div className="flex justify-between items-center text-sm border-b border-dashed border-slate-200 dark:border-slate-700 pb-2">
+                   <span className="text-slate-500 dark:text-slate-400">المحكمة</span>
+                   <span className="font-medium text-slate-800 dark:text-white">{currentCase.court}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm border-b border-dashed border-slate-200 dark:border-slate-700 pb-2">
+                   <span className="text-slate-500 dark:text-slate-400">المقر / الفرع</span>
+                   <span className="font-medium text-slate-800 dark:text-white">{currentCase.courtBranch || '-'}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm border-b border-dashed border-slate-200 dark:border-slate-700 pb-2">
+                   <span className="text-slate-500 dark:text-slate-400">الدائرة</span>
+                   <span className="font-medium text-slate-800 dark:text-white">{currentCase.circle || '-'}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                   <span className="text-slate-500 dark:text-slate-400">القاضي</span>
+                   <span className="font-medium text-slate-800 dark:text-white">{currentCase.judgeName || '-'}</span>
+                </div>
+             </div>
+          </div>
+       </div>
+    </div>
+  );
+
+  const renderHearingsTimeline = () => (
+     <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 animate-in fade-in slide-in-from-bottom-4">
+        <div className="flex justify-between items-center mb-6">
+           <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <Clock className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /> سجل الجلسات
+           </h3>
+           <button 
+             onClick={() => setIsAddHearingModalOpen(true)}
+             className="text-xs bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors flex items-center gap-1"
+           >
+              <Plus className="w-3 h-3" /> جلسة جديدة
+           </button>
+        </div>
+
+        <div className="relative border-r-2 border-slate-200 dark:border-slate-700 mr-4 space-y-8 pr-8">
+           {caseHearings.map((h, idx) => {
+              const isUpcoming = new Date(h.date) >= new Date(new Date().setHours(0,0,0,0));
+              return (
+                 <div key={h.id} className="relative group">
+                    <div className={`absolute -right-[41px] top-0 w-5 h-5 rounded-full border-4 border-white dark:border-slate-800 ${isUpcoming ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
+                    
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-700/50 hover:bg-white dark:hover:bg-slate-800 hover:shadow-md transition-all">
+                       <div>
+                          <div className="flex items-center gap-3 mb-2">
+                             <span className="font-bold text-lg text-slate-800 dark:text-white font-mono">{h.date}</span>
+                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isUpcoming ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
+                                {h.status}
+                             </span>
+                          </div>
+                          <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">{h.decision || h.requirements || 'لا توجد تفاصيل'}</p>
+                          {h.expenses && h.expenses.amount > 0 && (
+                             <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1 mt-2">
+                                <DollarSign className="w-3 h-3" /> مصروفات: {h.expenses.amount} ج.م ({h.expenses.paidBy === 'lawyer' ? 'المكتب' : 'الموكل'})
+                             </p>
+                          )}
+                       </div>
+                       
+                       <div className="flex items-center gap-2 sm:flex-col sm:items-end">
+                          {h.rulingUrl && (
+                             <a href={h.rulingUrl} target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline bg-white dark:bg-slate-700 px-2 py-1 rounded border border-indigo-100 dark:border-slate-600">
+                                <FileText className="w-3 h-3" /> الحكم/المحضر
+                             </a>
+                          )}
+                       </div>
+                    </div>
+                 </div>
+              )
+           })}
+           {caseHearings.length === 0 && <p className="text-center text-slate-400 text-sm">لا توجد جلسات مسجلة.</p>}
+        </div>
+
+        <AddHearingModal 
+          isOpen={isAddHearingModalOpen}
+          onClose={() => setIsAddHearingModalOpen(false)}
+          onSave={handleSaveHearing}
+          caseId={caseId}
+        />
+     </div>
+  );
+
+  const renderDocumentsTab = () => (
+     <div className="space-y-6 animate-in fade-in">
+        <div className="flex justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+           <div>
+              <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                 <FileText className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /> مستندات القضية
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">العقود، الأحكام، المذكرات، والإعلانات</p>
+           </div>
+           <button onClick={() => setIsDocModalOpen(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 flex items-center gap-2 shadow-sm shadow-indigo-200 dark:shadow-none">
+              <Upload className="w-4 h-4" /> رفع مستند
+           </button>
+        </div>
+
+        {currentCase.documents && currentCase.documents.length > 0 ? (
+           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {currentCase.documents.map(doc => (
+                 <div key={doc.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all group relative">
+                    <div className="flex items-start gap-3">
+                       <div className="p-3 bg-slate-50 dark:bg-slate-700 rounded-lg group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/30 transition-colors">
+                          {getFileIcon(doc.type)}
+                       </div>
+                       <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-slate-800 dark:text-white text-sm truncate mb-1" title={doc.name}>{doc.name}</h4>
+                          <span className="text-[10px] bg-slate-100 dark:bg-slate-600 text-slate-500 dark:text-slate-300 px-2 py-0.5 rounded">
+                             {doc.category === 'contract' ? 'عقد' : doc.category === 'ruling' ? 'حكم' : doc.category === 'notice' ? 'إعلان' : 'عام'}
+                          </span>
+                       </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs text-slate-400">
+                       <span>{doc.uploadDate}</span>
+                       <a href={doc.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-bold hover:underline">
+                          <Eye className="w-3 h-3" /> معاينة
+                       </a>
+                    </div>
+                 </div>
+              ))}
+           </div>
+        ) : (
+           <div className="p-12 text-center bg-white dark:bg-slate-800 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-500 flex flex-col items-center gap-3">
+              <FileCheck className="w-12 h-12 opacity-20" />
+              <p>لا توجد مستندات مرفقة في هذه القضية</p>
+              <button onClick={() => setIsDocModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 font-bold text-sm hover:underline">اضغط لرفع أول مستند</button>
+           </div>
+        )}
+     </div>
+  );
+
+  const renderFinanceTab = () => (
+     <div className="space-y-6 animate-in fade-in">
+        {/* Financial Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+           {/* Total Agreed */}
+           <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
+              <div className="flex justify-between items-start mb-2">
+                 <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">إجمالي الأتعاب</p>
+                    <h3 className="text-xl font-bold text-slate-800 dark:text-white mt-1">{totalAgreed.toLocaleString()} <span className="text-xs font-normal">ج.م</span></h3>
+                 </div>
+                 <div className="flex items-start gap-1">
+                    <button onClick={openFeesModal} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors">
+                        <Edit className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
+                        <Briefcase className="w-5 h-5" />
+                    </div>
+                 </div>
+              </div>
+              <div className="w-full bg-slate-100 dark:bg-slate-700 h-1 rounded-full overflow-hidden mt-2">
+                 <div className="bg-blue-500 h-full" style={{width: '100%'}}></div>
+              </div>
+           </div>
+
+           {/* Paid Amount (NEW CARD) */}
+           <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
+              <div className="flex justify-between items-start mb-2">
+                 <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">المدفوع من الأتعاب</p>
+                    <h3 className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{totalPaid.toLocaleString()} <span className="text-xs font-normal">ج.م</span></h3>
+                 </div>
+                 <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                    <CheckCircle className="w-5 h-5" />
+                 </div>
+              </div>
+              <div className="w-full bg-slate-100 dark:bg-slate-700 h-1 rounded-full overflow-hidden mt-2">
+                 <div className="bg-emerald-500 h-full" style={{width: `${paymentProgress}%`}}></div>
+              </div>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">نسبة التحصيل: {Math.round(paymentProgress)}%</p>
+           </div>
+
+           {/* Remaining Dues */}
+           <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <div className="flex justify-between items-start mb-2">
+                 <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">المستحقات (متبقي)</p>
+                    <h3 className="text-xl font-bold text-amber-600 dark:text-amber-400 mt-1">{remainingDues.toLocaleString()} <span className="text-xs font-normal">ج.م</span></h3>
+                 </div>
+                 <div className="p-2 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg">
+                    <AlertCircle className="w-5 h-5" />
+                 </div>
+              </div>
+              <div className="w-full bg-slate-100 dark:bg-slate-700 h-1 rounded-full overflow-hidden mt-2">
+                 <div className="bg-amber-500 h-full" style={{width: `${100 - paymentProgress}%`}}></div>
+              </div>
+           </div>
+
+           {/* Expenses */}
+           <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <div className="flex justify-between items-start mb-2">
+                 <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">مصاريف القضية</p>
+                    <h3 className="text-xl font-bold text-red-600 dark:text-red-400 mt-1">{totalExpenses.toLocaleString()} <span className="text-xs font-normal">ج.م</span></h3>
+                 </div>
+                 <div className="p-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg">
+                    <TrendingDown className="w-5 h-5" />
+                 </div>
+              </div>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">تشمل الرسوم، الانتقالات، والإكراميات</p>
+           </div>
+
+           {/* Net Income */}
+           <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+              <div className="flex justify-between items-start mb-2">
+                 <div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">صافي دخل القضية</p>
+                    <h3 className="text-xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">{netIncome.toLocaleString()} <span className="text-xs font-normal">ج.م</span></h3>
+                 </div>
+                 <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg">
+                    <Calculator className="w-5 h-5" />
+                 </div>
+              </div>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">بعد خصم المصاريف من المتحصل</p>
+           </div>
+        </div>
+
+        {/* Transactions History */}
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+           <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50">
+              <h3 className="font-bold text-slate-800 dark:text-white text-sm flex items-center gap-2">
+                 <Wallet className="w-4 h-4 text-slate-500" /> سجل المعاملات المالية
+              </h3>
+              <button 
+                onClick={() => setIsTransModalOpen(true)}
+                className="text-xs bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white px-3 py-1.5 rounded-lg font-bold hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors flex items-center gap-1 shadow-sm"
+              >
+                 <Plus className="w-3 h-3" /> إضافة معاملة
+              </button>
+           </div>
+           
+           <div className="max-h-80 overflow-y-auto">
+              <table className="w-full text-right text-sm">
+                 <thead className="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold sticky top-0">
+                    <tr>
+                       <th className="p-3">التاريخ</th>
+                       <th className="p-3">النوع</th>
+                       <th className="p-3">المبلغ</th>
+                       <th className="p-3">البيان</th>
+                       <th className="p-3">بواسطة</th>
+                    </tr>
+                 </thead>
+                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {currentCase.finance?.history && currentCase.finance.history.length > 0 ? (
+                       currentCase.finance.history.map((t, idx) => (
+                          <tr key={t.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200">
+                             <td className="p-3 font-mono text-xs text-slate-500 dark:text-slate-400">{t.date}</td>
+                             <td className="p-3">
+                                {t.type === 'payment' ? (
+                                   <span className="flex items-center gap-1 text-green-600 dark:text-green-400 font-bold text-xs"><ArrowDownLeft className="w-3 h-3"/> دفعة</span>
+                                ) : (
+                                   <span className="flex items-center gap-1 text-red-600 dark:text-red-400 font-bold text-xs"><ArrowUpRight className="w-3 h-3"/> مصروف</span>
+                                )}
+                             </td>
+                             <td className={`p-3 font-bold ${t.type === 'payment' ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                                {t.type === 'expense' ? '-' : ''}{t.amount.toLocaleString()}
+                             </td>
+                             <td className="p-3 text-slate-600 dark:text-slate-400 text-xs">{t.description || '-'}</td>
+                             <td className="p-3 text-slate-500 dark:text-slate-400 text-xs">{t.recordedBy}</td>
+                          </tr>
+                       ))
+                    ) : (
+                       <tr><td colSpan={5} className="p-8 text-center text-slate-400 text-xs">لا توجد معاملات مسجلة حتى الآن</td></tr>
+                    )}
+                 </tbody>
+              </table>
+           </div>
+        </div>
+     </div>
+  );
+
+  return (
+    <div className="space-y-6 pb-20">
+       {/* Breadcrumb / Back */}
+       <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <button onClick={onBack} className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">القضايا</button>
+          <span>/</span>
+          <span className="text-slate-800 dark:text-slate-200 font-bold">{currentCase.caseNumber}</span>
+       </div>
+
+       {/* Main Header */}
+       <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-2 h-full bg-gradient-to-b from-indigo-500 to-purple-600"></div>
+          
+          <div className="flex flex-col lg:flex-row justify-between items-start gap-6">
+             <div className="flex-1">
+                <div className="flex items-center gap-3 mb-3">
+                   <span className={`px-3 py-1 rounded-full text-xs font-bold border ${getStatusBadgeColor(currentCase.status)}`}>
+                      {currentCase.status}
+                   </span>
+                   <span className="text-xs font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">
+                      {currentCase.year}
+                   </span>
+                </div>
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2 leading-tight">
+                   {currentCase.title}
+                </h1>
+                <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500 dark:text-slate-400">
+                   <span className="flex items-center gap-1.5"><Shield className="w-4 h-4"/> رقم: <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{currentCase.caseNumber}</span></span>
+                   <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                   <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4"/> {currentCase.court}</span>
+                </div>
+             </div>
+
+             <div className="flex items-center gap-3 shrink-0">
+                <button 
+                  onClick={handleEditOpen} 
+                  className="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors flex items-center gap-2 shadow-sm"
+                >
+                   <Edit3 className="w-4 h-4" /> تعديل
+                </button>
+             </div>
+          </div>
+       </div>
+
+       {/* Tabs Navigation */}
+       <div className="flex p-1 bg-slate-200/50 dark:bg-slate-800/50 rounded-xl overflow-x-auto">
+          {[
+             { id: 'overview', label: 'نظرة عامة', icon: Activity },
+             { id: 'stages', label: 'مسار القضية', icon: GitCommit },
+             { id: 'hearings', label: 'سجل الجلسات', icon: Gavel },
+             { id: 'documents', label: 'المستندات', icon: FileText },
+             { id: 'finance', label: 'المالية', icon: DollarSign },
+          ].map((tab) => (
+             <button
+               key={tab.id}
+               onClick={() => setActiveTab(tab.id as any)}
+               className={`flex-1 min-w-[120px] py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all ${activeTab === tab.id ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:hover:bg-slate-700/50'}`}
+             >
+                <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
+                {tab.label}
+             </button>
+          ))}
+       </div>
+
+       {/* Tab Content */}
+       <div className="min-h-[400px]">
+          {activeTab === 'overview' && renderOverview()}
+          {activeTab === 'stages' && renderStagesTab()}
+          {activeTab === 'hearings' && renderHearingsTimeline()}
+          {activeTab === 'documents' && renderDocumentsTab()}
+          {activeTab === 'finance' && renderFinanceTab()}
+       </div>
+
+       {/* Edit Modal */}
+       {isEditModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl p-6 animate-in zoom-in-95 overflow-y-auto max-h-[90vh]">
+              <div className="flex justify-between items-center mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
+                 <h3 className="font-bold text-xl text-slate-800 dark:text-white">تعديل بيانات القضية</h3>
+                 <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-red-500 transition-colors"><X className="w-6 h-6"/></button>
+              </div>
+              <form onSubmit={handleEditSave} className="space-y-5">
+                 <div className="space-y-4">
+                    <div>
+                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">عنوان الدعوى</label>
+                       <input type="text" value={editCaseData.title || ''} onChange={e => setEditCaseData({...editCaseData, title: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                           <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">اسم المحكمة</label>
+                           <input type="text" value={editCaseData.courtBranch || ''} onChange={e => setEditCaseData({...editCaseData, courtBranch: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
+                        </div>
+                        <div>
+                           <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">الدائرة</label>
+                           <input type="text" value={editCaseData.circle || ''} onChange={e => setEditCaseData({...editCaseData, circle: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
+                        </div>
+                    </div>
+                    <div>
+                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">وصف / ملاحظات</label>
+                       <textarea value={editCaseData.description || ''} onChange={e => setEditCaseData({...editCaseData, description: e.target.value})} rows={3} className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"></textarea>
+                    </div>
+                    <div>
+                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">حالة القضية</label>
+                       <select value={editCaseData.status} onChange={e => setEditCaseData({...editCaseData, status: e.target.value as CaseStatus})} className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none">
+                          {Object.values(CaseStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                       </select>
+                    </div>
+
+                    {/* Strategy Editing Fields */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
+                       <h4 className="font-bold text-slate-800 dark:text-white mb-2 text-sm">استراتيجية القضية</h4>
+                       <div className="space-y-3">
+                          <div>
+                             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">نقاط القوة</label>
+                             <textarea 
+                                value={editCaseData.strategy?.strengthPoints || ''} 
+                                onChange={e => setEditCaseData({
+                                   ...editCaseData, 
+                                   strategy: { ...editCaseData.strategy, strengthPoints: e.target.value }
+                                })} 
+                                rows={2} 
+                                className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" 
+                                placeholder="أذكر نقاط القوة..."
+                             ></textarea>
+                          </div>
+                          <div>
+                             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">نقاط الضعف / الثغرات</label>
+                             <textarea 
+                                value={editCaseData.strategy?.weaknessPoints || ''} 
+                                onChange={e => setEditCaseData({
+                                   ...editCaseData, 
+                                   strategy: { ...editCaseData.strategy, weaknessPoints: e.target.value }
+                                })} 
+                                rows={2} 
+                                className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" 
+                                placeholder="أذكر نقاط الضعف..."
+                             ></textarea>
+                          </div>
+                          <div>
+                             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">خطة العمل</label>
+                             <textarea 
+                                value={editCaseData.strategy?.plan || ''} 
+                                onChange={e => setEditCaseData({
+                                   ...editCaseData, 
+                                   strategy: { ...editCaseData.strategy, plan: e.target.value }
+                                })} 
+                                rows={2} 
+                                className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" 
+                                placeholder="خطة سير الدعوى..."
+                             ></textarea>
+                          </div>
+                       </div>
+                    </div>
+
+                    {/* Opponent Editing Fields */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
+                       <h4 className="font-bold text-slate-800 dark:text-white mb-2 text-sm">بيانات الخصم الرئيسي</h4>
+                       <div className="grid grid-cols-2 gap-4">
+                          <div>
+                             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">اسم الخصم</label>
+                             <input 
+                                type="text" 
+                                value={editOpponentName} 
+                                onChange={e => setEditOpponentName(e.target.value)} 
+                                className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" 
+                                placeholder="اسم الخصم..."
+                             />
+                          </div>
+                          <div>
+                             <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">محامي الخصم</label>
+                             <input 
+                                type="text" 
+                                value={editOpponentLawyer} 
+                                onChange={e => setEditOpponentLawyer(e.target.value)} 
+                                className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" 
+                                placeholder="اسم المحامي..."
+                             />
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+                 <div className="flex gap-3 pt-4 border-t border-slate-100 dark:border-slate-700">
+                    <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-2.5 border border-slate-300 dark:border-slate-600 rounded-xl text-slate-700 dark:text-slate-300 font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">إلغاء</button>
+                    <button type="submit" className="flex-1 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-colors">حفظ التعديلات</button>
+                 </div>
+              </form>
+           </div>
+        </div>
+       )}
+
+       {/* Upload Document Modal */}
+       {isDocModalOpen && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6 animate-in zoom-in-95">
+                <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                   <h3 className="font-bold text-lg text-slate-800 dark:text-white">رفع مستند جديد</h3>
+                   <button onClick={() => setIsDocModalOpen(false)}><X className="w-5 h-5 text-slate-400 hover:text-red-500" /></button>
+                </div>
+                <form onSubmit={handleSaveDocument} className="space-y-4">
+                   {/* Google Drive Toggle */}
+                   <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                     <div className="flex items-center gap-3">
+                       <div className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
+                         <Cloud className="w-5 h-5" />
+                       </div>
+                       <div>
+                         <p className="text-sm font-bold text-slate-800 dark:text-white">رفع إلى Google Drive</p>
+                         <p className="text-xs text-slate-500 dark:text-slate-400">سيتم حفظ الملف في سحابة جوجل</p>
+                       </div>
+                     </div>
+                     <button
+                       type="button"
+                       onClick={() => setUseGoogleDrive(!useGoogleDrive)}
+                       className={`w-12 h-6 rounded-full transition-colors relative ${useGoogleDrive ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}
+                     >
+                       <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${useGoogleDrive ? 'right-1' : 'right-7'}`}></div>
+                     </button>
+                   </div>
+
+                   {useGoogleDrive && !googleDriveService.isSignedIn() && (
+                     <button
+                       type="button"
+                       onClick={async () => {
+                         try {
+                           await googleDriveService.signIn();
+                         } catch (err: any) {
+                           alert(err.message || 'فشل تسجيل الدخول إلى Google Drive');
+                         }
+                       }}
+                       className="w-full flex items-center justify-center gap-2 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                     >
+                       <LogIn className="w-4 h-4" />
+                       تسجيل الدخول إلى Google Drive
+                     </button>
+                   )}
+                   <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">اسم المستند</label>
+                      <input 
+                         type="text" required 
+                         value={newDocData.name} 
+                         onChange={e => setNewDocData({...newDocData, name: e.target.value})} 
+                         className="w-full border p-2 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                         placeholder="مثال: عقد، حكم، مذكرة..."
+                      />
+                   </div>
+                   <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">التصنيف</label>
+                      <select 
+                         value={newDocData.category} 
+                         onChange={e => setNewDocData({...newDocData, category: e.target.value})}
+                         className="w-full border p-2 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                      >
+                         <option value="other">عام</option>
+                         <option value="contract">عقد</option>
+                         <option value="ruling">حكم</option>
+                         <option value="notice">إعلان/إنذار</option>
+                         <option value="minutes">محضر</option>
+                      </select>
+                   </div>
+                   
+                   <div 
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${newDocData.file ? 'border-indigo-300 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                   >
+                      <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} />
+                      {newDocData.file ? (
+                         <div className="flex flex-col items-center gap-2">
+                            <FileCheck className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
+                            <p className="text-sm font-bold text-slate-800 dark:text-white">{newDocData.file.name}</p>
+                         </div>
+                      ) : (
+                         <div className="flex flex-col items-center gap-2 text-slate-500">
+                            <Upload className="w-8 h-8 opacity-50" />
+                            <p className="text-sm font-medium">اضغط لاختيار ملف</p>
+                         </div>
+                      )}
+                   </div>
+
+                   <button 
+                     type="submit" 
+                     disabled={!newDocData.file || !newDocData.name || isUploadingToDrive} 
+                     className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed mt-2 flex items-center justify-center gap-2"
+                   >
+                     {isUploadingToDrive ? (
+                       <>
+                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                         جاري الرفع...
+                       </>
+                     ) : (
+                       'حفظ المستند'
+                     )}
+                   </button>
+                </form>
+             </div>
+          </div>
+       )}
+
+       {/* Add Transaction Modal */}
+       {isTransModalOpen && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6 animate-in zoom-in-95">
+                <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                   <h3 className="font-bold text-lg text-slate-800 dark:text-white">تسجيل معاملة مالية</h3>
+                   <button onClick={() => setIsTransModalOpen(false)}><X className="w-5 h-5 text-slate-400 hover:text-red-500" /></button>
+                </div>
+                <form onSubmit={handleSaveTransaction} className="space-y-4">
+                   <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+                      <button type="button" onClick={() => setTransData({...transData, type: 'payment'})} className={`flex-1 py-2 rounded font-bold text-sm ${transData.type === 'payment' ? 'bg-white dark:bg-slate-600 text-green-600 dark:text-green-400 shadow-sm' : 'text-slate-500'}`}>دفعة (وارد)</button>
+                      <button type="button" onClick={() => setTransData({...transData, type: 'expense'})} className={`flex-1 py-2 rounded font-bold text-sm ${transData.type === 'expense' ? 'bg-white dark:bg-slate-600 text-red-600 dark:text-red-400 shadow-sm' : 'text-slate-500'}`}>مصروف (صادر)</button>
+                   </div>
+                   
+                   <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">المبلغ (ج.م)</label>
+                      <input type="number" required min="0" value={transData.amount} onChange={e => setTransData({...transData, amount: Number(e.target.value)})} className="w-full border p-2 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white" />
+                   </div>
+                   <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">الوصف / البيان</label>
+                      <input type="text" value={transData.description} onChange={e => setTransData({...transData, description: e.target.value})} className="w-full border p-2 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="مثال: دفعة تحت الحساب" />
+                   </div>
+
+                   <button type="submit" className={`w-full py-2 rounded-lg font-bold text-white mt-2 ${transData.type === 'payment' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
+                      حفظ المعاملة
+                   </button>
+                </form>
+             </div>
+          </div>
+       )}
+
+       {/* Stage Update Modal */}
+       {isStageModalOpen && selectedStageType && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6 animate-in zoom-in-95 overflow-y-auto max-h-[90vh]">
+                <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                   <h3 className="font-bold text-lg text-slate-800 dark:text-white">تحديث حالة: {selectedStageType}</h3>
+                   <button onClick={() => setIsStageModalOpen(false)}><X className="w-5 h-5 text-slate-400 hover:text-red-500" /></button>
+                </div>
+                <form onSubmit={handleSaveStage} className="space-y-4">
+                   <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">الحالة</label>
+                      <select 
+                         value={stageUpdateData.status || 'pending'} 
+                         onChange={e => setStageUpdateData({...stageUpdateData, status: e.target.value as any})} 
+                         className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                      >
+                         <option value="pending">معلقة (لم تبدأ)</option>
+                         <option value="in_progress">جارية (قيد العمل)</option>
+                         <option value="completed">مكتملة (تم الانتهاء)</option>
+                         <option value="skipped">تم التجاوز (غير مطلوبة)</option>
+                      </select>
+                   </div>
+                   
+                   <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">التاريخ</label>
+                      <input 
+                         type="date" 
+                         value={stageUpdateData.date || ''} 
+                         onChange={e => setStageUpdateData({...stageUpdateData, date: e.target.value})} 
+                         className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                      />
+                   </div>
+
+                   <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">رقم مرجعي (محضر/قضية)</label>
+                      <input 
+                         type="text" 
+                         value={stageUpdateData.referenceNumber || ''} 
+                         onChange={e => setStageUpdateData({...stageUpdateData, referenceNumber: e.target.value})} 
+                         className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                         placeholder="رقم المحضر، رقم القضية..."
+                      />
+                   </div>
+
+                   <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">المكان / الجهة</label>
+                      <input 
+                         type="text" 
+                         value={stageUpdateData.location || ''} 
+                         onChange={e => setStageUpdateData({...stageUpdateData, location: e.target.value})} 
+                         className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                         placeholder="اسم القسم، المحكمة، النيابة..."
+                      />
+                   </div>
+
+                   <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">المسؤول / الضابط / القاضي</label>
+                      <input 
+                         type="text" 
+                         value={stageUpdateData.officer || ''} 
+                         onChange={e => setStageUpdateData({...stageUpdateData, officer: e.target.value})} 
+                         className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                         placeholder="اسم الضابط، القاضي، الموظف..."
+                      />
+                   </div>
+
+                   <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        {selectedStageType === CaseStageType.POLICE_REPORT ? 'تفاصيل المحضر / الأقوال' :
+                         selectedStageType === CaseStageType.PROSECUTION ? 'ملاحظات التحقيق / القرارات' :
+                         selectedStageType === CaseStageType.COURT_FILING ? 'تفاصيل العريضة / الطلبات' :
+                         selectedStageType === CaseStageType.TRIAL ? 'تفاصيل الدفوع / المرافعة' :
+                         selectedStageType === CaseStageType.JUDGMENT ? 'منطوق الحكم / الحيثيات' :
+                         selectedStageType === CaseStageType.APPEAL ? 'أسباب الاستئناف' :
+                         selectedStageType === CaseStageType.CASSATION ? 'أسباب النقض' :
+                         selectedStageType === CaseStageType.ENFORCEMENT ? 'إجراءات التنفيذ' :
+                         'تفاصيل إضافية'}
+                      </label>
+                      <textarea 
+                         value={stageUpdateData.details || ''} 
+                         onChange={e => setStageUpdateData({...stageUpdateData, details: e.target.value})} 
+                         rows={3}
+                         className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                         placeholder={
+                           selectedStageType === CaseStageType.POLICE_REPORT ? 'أذكر تفاصيل المحضر والأقوال...' :
+                           selectedStageType === CaseStageType.PROSECUTION ? 'أذكر قرارات النيابة ومجريات التحقيق...' :
+                           selectedStageType === CaseStageType.TRIAL ? 'أذكر الدفوع المقدمة وتفاصيل المرافعة...' :
+                           'تفاصيل إضافية عن المرحلة...'
+                         }
+                      ></textarea>
+                   </div>
+
+                   <div>
+                      <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">ملاحظات</label>
+                      <textarea 
+                         value={stageUpdateData.notes || ''} 
+                         onChange={e => setStageUpdateData({...stageUpdateData, notes: e.target.value})} 
+                         rows={3}
+                         className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                         placeholder="أي تفاصيل إضافية..."
+                      ></textarea>
+                   </div>
+
+                   <button type="submit" className="w-full py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-colors">حفظ التحديث</button>
+                </form>
+             </div>
+          </div>
+       )}
+
+       {/* Edit Fees Modal */}
+       {isFeesModalOpen && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+                <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                   <h3 className="font-bold text-lg text-slate-800 dark:text-white">تعديل إجمالي الأتعاب</h3>
+                   <button onClick={() => setIsFeesModalOpen(false)}><X className="w-5 h-5 text-slate-400 hover:text-red-500" /></button>
+                </div>
+                <form onSubmit={handleUpdateAgreedFees} className="space-y-4">
+                   <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">قيمة الأتعاب الجديدة</label>
+                      <input 
+                         type="number" required min="0" 
+                         value={newFeeValue} 
+                         onChange={e => setNewFeeValue(Number(e.target.value))} 
+                         className="w-full border p-2 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
+                      />
+                   </div>
+                   <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700 mt-2">
+                      تحديث القيمة
+                   </button>
+                </form>
+             </div>
+          </div>
+       )}
+    </div>
+  );
+};
+
+export default CaseDetails;
