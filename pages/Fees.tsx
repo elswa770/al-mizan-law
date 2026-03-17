@@ -58,19 +58,28 @@ const Fees: React.FC<FeesProps> = ({ cases, clients, hearings, onUpdateCase, can
     let totalCaseExpenses = 0;
     let totalHearingExpenses = 0;
 
-    cases.forEach(c => {
-      if (c.finance) {
-        totalAgreed += c.finance.agreedFees || 0;
-        totalCollected += c.finance.paidAmount || 0;
-        totalCaseExpenses += c.finance.expenses || 0;
-      }
-    });
+    // Add defensive checks with default values
+    const safeCases = cases || [];
+    const safeHearings = hearings || [];
+    
+    // Add null checks to prevent errors
+    if (safeCases && Array.isArray(safeCases)) {
+      safeCases.forEach(c => {
+        if (c.finance) {
+          totalAgreed += c.finance.agreedFees || 0;
+          totalCollected += c.finance.paidAmount || 0;
+          totalCaseExpenses += c.finance.expenses || 0;
+        }
+      });
+    }
 
-    hearings.forEach(h => {
-      if (h.expenses && h.expenses.paidBy === 'lawyer') {
-        totalHearingExpenses += h.expenses.amount;
-      }
-    });
+    if (safeHearings && Array.isArray(safeHearings)) {
+      safeHearings.forEach(h => {
+        if (h.expenses && h.expenses.paidBy === 'lawyer') {
+          totalHearingExpenses += h.expenses.amount;
+        }
+      });
+    }
 
     const totalExpenses = totalCaseExpenses + totalHearingExpenses;
     const totalPending = totalAgreed - totalCollected;
@@ -115,39 +124,43 @@ const Fees: React.FC<FeesProps> = ({ cases, clients, hearings, onUpdateCase, can
     const list: any[] = [];
     
     // A. Hearing Expenses
-    hearings.forEach(h => {
-      if (h.expenses && h.expenses.amount > 0) {
-        const c = cases.find(x => x.id === h.caseId);
-        list.push({
-          id: `h-${h.id}`,
-          date: h.date,
-          category: 'مصروفات جلسة',
-          description: h.expenses.description || 'مصروفات متنوعة',
-          amount: h.expenses.amount,
-          caseTitle: c?.title,
-          clientName: clients.find(cl => cl.id === c?.clientId)?.name,
-          paidBy: h.expenses.paidBy === 'lawyer' ? 'المكتب' : 'الموكل'
-        });
-      }
-    });
+    if (hearings && Array.isArray(hearings)) {
+      hearings.forEach(h => {
+        if (h.expenses && h.expenses.amount > 0) {
+          const c = cases && Array.isArray(cases) ? cases.find(x => x.id === h.caseId) : null;
+          list.push({
+            id: `h-${h.id}`,
+            date: h.date,
+            category: 'مصروفات جلسة',
+            description: h.expenses.description || 'مصروفات متنوعة',
+            amount: h.expenses.amount,
+            caseTitle: c?.title,
+            clientName: clients && Array.isArray(clients) ? clients.find(cl => cl.id === c?.clientId)?.name : undefined,
+            paidBy: h.expenses.paidBy === 'lawyer' ? 'المكتب' : 'الموكل'
+          });
+        }
+      });
+    }
 
     // B. Case Admin Expenses (from Transactions Log if available, else fallback)
-    cases.forEach(c => {
-      if (c.finance?.history) {
-         c.finance.history.filter(t => t.type === 'expense').forEach(t => {
-            list.push({
-               id: t.id,
+    if (cases && Array.isArray(cases)) {
+      cases.forEach(c => {
+        if (c.finance?.history) {
+           c.finance.history.filter(t => t.type === 'expense').forEach(t => {
+              list.push({
+                 id: t.id,
                date: t.date,
                category: t.category || 'إدارية',
                description: t.description || 'مصروفات',
                amount: t.amount,
                caseTitle: c.title,
-               clientName: clients.find(cl => cl.id === c.clientId)?.name,
+               clientName: clients && Array.isArray(clients) ? clients.find(cl => cl.id === c.clientId)?.name : undefined,
                paidBy: 'المكتب'
             });
          });
-      }
-    });
+        }
+      });
+    }
 
     return list.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [cases, hearings, clients]);
@@ -156,10 +169,34 @@ const Fees: React.FC<FeesProps> = ({ cases, clients, hearings, onUpdateCase, can
 
   const handleTransactionSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onUpdateCase || !transactionData.caseId) return;
+    
+    // Enhanced validation
+    if (!onUpdateCase) {
+      alert('لا يمكن إضافة معاملة. وظيفة التحديث غير متاحة.');
+      return;
+    }
+    
+    if (!transactionData.caseId) {
+      alert('يرجى اختيار القضية أولاً.');
+      return;
+    }
+    
+    if (!transactionData.amount || transactionData.amount <= 0) {
+      alert('يرجى إدخال مبلغ صحيح أكبر من صفر.');
+      return;
+    }
 
     const targetCase = cases.find(c => c.id === transactionData.caseId);
-    if (!targetCase) return;
+    if (!targetCase) {
+      alert('القضية المختارة غير موجودة.');
+      return;
+    }
+
+    // For expenses, require category
+    if (transactionData.type === 'expense' && !transactionData.category) {
+      alert('يرجى اختيار بند المصروف.');
+      return;
+    }
 
     const currentFinance = targetCase.finance || { agreedFees: 0, paidAmount: 0, expenses: 0, history: [] };
     
@@ -170,7 +207,7 @@ const Fees: React.FC<FeesProps> = ({ cases, clients, hearings, onUpdateCase, can
        type: transactionData.type,
        method: transactionData.type === 'payment' ? transactionData.method : undefined,
        category: transactionData.type === 'expense' ? (transactionData.category || 'نثريات') : undefined,
-       description: transactionData.description,
+       description: transactionData.description || (transactionData.type === 'payment' ? 'دفعة من حساب الأتعاب' : 'مصروفات'),
        recordedBy: 'المحامي' // In real app, use current user name
     };
 
@@ -185,13 +222,22 @@ const Fees: React.FC<FeesProps> = ({ cases, clients, hearings, onUpdateCase, can
       newFinance.expenses += Number(transactionData.amount);
     }
 
-    onUpdateCase({
-      ...targetCase,
-      finance: newFinance
-    });
+    try {
+      onUpdateCase({
+        ...targetCase,
+        finance: newFinance
+      });
 
-    setIsTransactionModalOpen(false);
-    setTransactionData({ caseId: '', amount: 0, type: 'payment', description: '', method: 'cash', category: '' });
+      setIsTransactionModalOpen(false);
+      setTransactionData({ caseId: '', amount: 0, type: 'payment', description: '', method: 'cash', category: '' });
+      
+      // Show success message
+      const successMsg = transactionData.type === 'payment' ? 'تم إضافة الدفعة بنجاح!' : 'تم تسجيل المصروف بنجاح!';
+      alert(successMsg);
+    } catch (error) {
+      console.error('Error saving transaction:', error);
+      alert('حدث خطأ أثناء حفظ المعاملة. يرجى المحاولة مرة أخرى.');
+    }
   };
 
   const openTransactionModal = (caseId?: string) => {
@@ -539,7 +585,7 @@ ${typeLabel}
         </div>
         <div className="flex gap-2">
            <button 
-             onClick={() => setIsTransactionModalOpen(true)}
+             onClick={() => openTransactionModal()}
              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-colors"
            >
              <Plus className="w-4 h-4" /> تسجيل معاملة
@@ -751,10 +797,10 @@ ${typeLabel}
 
                   {/* Case Selection */}
                   <div>
-                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">القضية الخاصة بالمعاملة</label>
+                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">القضية الخاصة بالمعاملة *</label>
                      <select 
                         required
-                        className="w-full border border-slate-300 dark:border-slate-600 p-2 rounded-lg bg-white dark:bg-slate-700 dark:text-white"
+                        className="w-full border border-slate-300 dark:border-slate-600 p-2 rounded-lg bg-white dark:bg-slate-700 dark:text-white focus:outline-none focus:border-emerald-500"
                         value={transactionData.caseId}
                         onChange={e => setTransactionData({...transactionData, caseId: e.target.value})}
                      >
@@ -767,14 +813,16 @@ ${typeLabel}
 
                   {/* Amount */}
                   <div>
-                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">المبلغ (ج.م)</label>
+                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">المبلغ (ج.م) *</label>
                      <input 
                         type="number" 
                         required
-                        min="0"
-                        className="w-full border border-slate-300 dark:border-slate-600 p-2 rounded-lg bg-white dark:bg-slate-700 dark:text-white"
-                        value={transactionData.amount}
+                        min="1"
+                        step="0.01"
+                        className="w-full border border-slate-300 dark:border-slate-600 p-2 rounded-lg bg-white dark:bg-slate-700 dark:text-white focus:outline-none focus:border-emerald-500"
+                        value={transactionData.amount || ''}
                         onChange={e => setTransactionData({...transactionData, amount: Number(e.target.value)})}
+                        placeholder="أدخل المبلغ"
                      />
                   </div>
 
@@ -801,9 +849,10 @@ ${typeLabel}
                   {/* Category (If Expense) */}
                   {transactionData.type === 'expense' && (
                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">بند المصروف</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">بند المصروف *</label>
                         <select 
-                           className="w-full border border-slate-300 dark:border-slate-600 p-2 rounded-lg bg-white dark:bg-slate-700 dark:text-white"
+                           required
+                           className="w-full border border-slate-300 dark:border-slate-600 p-2 rounded-lg bg-white dark:bg-slate-700 dark:text-white focus:outline-none focus:border-emerald-500"
                            value={transactionData.category}
                            onChange={e => setTransactionData({...transactionData, category: e.target.value})}
                         >

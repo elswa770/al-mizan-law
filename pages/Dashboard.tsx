@@ -35,11 +35,11 @@ const StatCard = ({ title, value, subtext, icon: Icon, color, onClick }: { title
 );
 
 const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appointments = [], tasks = [], activities = [], onUpdateTask, onNavigate, onCaseClick, onUpdateCase, onUpdateClient, onUpdateHearing, onAddHearing, readOnly = false }) => {
-  console.log('Dashboard component mounted with:', {
-    onUpdateHearing: !!onUpdateHearing,
-    onAddHearing: !!onAddHearing,
-    readOnly
-  });
+  // console.log('Dashboard component mounted with:', {
+  //   onUpdateHearing: !!onUpdateHearing,
+  //   onAddHearing: !!onAddHearing,
+  //   readOnly
+  // });
   
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -82,6 +82,32 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
   ).length;
 
   const totalDues = cases.reduce((acc, c) => acc + (c.finance ? (c.finance.agreedFees - c.finance.paidAmount) : 0), 0);
+
+  // Calculate real financial data
+  const totalAgreedFees = cases.reduce((acc, c) => acc + (c.finance?.agreedFees || 0), 0);
+  const totalPaidAmount = cases.reduce((acc, c) => acc + (c.finance?.paidAmount || 0), 0);
+  const collectionPercentage = totalAgreedFees > 0 ? Math.round((totalPaidAmount / totalAgreedFees) * 100) : 0;
+  
+  // Calculate current month expenses (simplified - you can enhance this with real expense data)
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+  const currentMonthExpenses = cases.reduce((acc, c) => {
+    if (c.finance?.expenses) {
+      // Handle expenses as array of expense objects
+      if (Array.isArray(c.finance.expenses)) {
+        const caseExpenses = c.finance.expenses.filter((exp: any) => {
+          const expDate = new Date(exp.date);
+          return expDate.getMonth() === currentMonth && expDate.getFullYear() === currentYear;
+        });
+        return acc + caseExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+      }
+      // Handle expenses as a single number
+      else if (typeof c.finance.expenses === 'number') {
+        return acc + c.finance.expenses;
+      }
+    }
+    return acc;
+  }, 0);
 
   // --- Smart Logic: Critical Cases ---
   const criticalCases = useMemo(() => {
@@ -575,19 +601,22 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                   <div className="space-y-3">
                      <div className="flex justify-between items-center text-sm">
                         <span className="text-slate-500 dark:text-slate-400">إجمالي الأتعاب</span>
-                        <span className="font-bold text-slate-800 dark:text-white">{cases.reduce((a,c)=>a+(c.finance?.agreedFees||0),0).toLocaleString()}</span>
+                        <span className="font-bold text-slate-800 dark:text-white">{totalAgreedFees.toLocaleString()} ج.م</span>
                      </div>
                      <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
-                        <div className="bg-emerald-500 h-full" style={{width: '40%'}}></div>
+                        <div className="bg-emerald-500 h-full transition-all duration-500" style={{width: `${collectionPercentage}%`}}></div>
                      </div>
                      <div className="flex justify-between items-center text-xs text-slate-500 dark:text-slate-400 mt-1">
-                        <span>تم تحصيل: 40%</span>
-                        <span className="text-red-500 dark:text-red-400 font-bold">متبقي: {totalDues.toLocaleString()}</span>
+                        <span>تم تحصيل: {collectionPercentage}%</span>
+                        <span className="text-red-500 dark:text-red-400 font-bold">متبقي: {totalDues.toLocaleString()} ج.م</span>
                      </div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
                      <p className="text-xs text-slate-400 mb-1">مصروفات هذا الشهر</p>
-                     <p className="font-bold text-slate-800 dark:text-white">1,250 ج.م</p>
+                     <p className="font-bold text-slate-800 dark:text-white">{currentMonthExpenses.toLocaleString()} ج.م</p>
+                     <div className="mt-2 text-xs text-slate-500">
+                        <span className="text-emerald-600 dark:text-emerald-400">صافي الربح: {(totalPaidAmount - currentMonthExpenses).toLocaleString()} ج.م</span>
+                     </div>
                   </div>
                </div>
             )}

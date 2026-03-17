@@ -661,5 +661,20 @@ service cloud.firestore {
       allow update: if isAuthenticated() && isSuperAdmin();
       allow delete: if isAuthenticated() && isSuperAdmin();
     }
+
+    // Archive Collections
+    match /archiveLocations/{locationId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
+      allow update: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    match /archiveRequests/{requestId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
+      allow update: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
   }
 }

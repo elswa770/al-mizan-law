@@ -35,6 +35,27 @@ export enum CourtType {
   LABOR = 'عمالي'
 }
 
+export enum ArchiveLocationType {
+  ROOM = 'room',
+  CABINET = 'cabinet',
+  SHELF = 'shelf',
+  BOX = 'box'
+}
+
+export enum ArchiveStatus {
+  DIGITAL = 'رقمي',
+  PHYSICAL = 'فيزيائي',
+  BOTH = 'رقمي وفيزيائي'
+}
+
+export enum ArchiveRequestStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  RETURNED = 'returned',
+  ARCHIVED_RETURNED = 'archived_returned'
+}
+
 export type PermissionLevel = 'none' | 'read' | 'write';
 export type PaymentMethod = 'cash' | 'check' | 'instapay' | 'wallet' | 'bank_transfer';
 export type ReferenceType = 'law' | 'ruling' | 'encyclopedia' | 'regulation';
@@ -58,13 +79,14 @@ export interface SubscriptionPlan {
   name: string;
   price: number;
   currency: string;
-  billingCycle: 'monthly' | 'yearly';
+  billingCycle: 'daily' | 'monthly' | 'yearly';
   features: string[];
   maxUsers: number;
   maxCases: number;
   maxClients: number;
   maxStorageGB: number;
   isActive: boolean;
+  sortOrder?: number; // New field for admin-defined ordering
 }
 
 export interface Firm {
@@ -76,6 +98,7 @@ export interface Firm {
   subscriptionEndDate?: string;
   trialStartDate?: string;
   trialEndDate?: string;
+  hasUsedTrial?: boolean; // Track if trial has been used before
   createdAt: string;
 }
 

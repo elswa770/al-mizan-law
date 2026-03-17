@@ -151,7 +151,7 @@ function AppContent() {
       const checkTrialSubscription = async () => {
         // Skip subscription checks for super admin
         if (currentUser?.email?.toLowerCase() === 'elswa770@gmail.com') {
-          console.log('👑 Super admin detected - skipping subscription checks');
+          // console.log('👑 Super admin detected - skipping subscription checks');
           return;
         }
         
@@ -159,26 +159,26 @@ function AppContent() {
           const firmDoc = await getDoc(doc(db, 'firms', currentUser.firmId));
           if (firmDoc.exists()) {
             const firmData = firmDoc.data();
-            console.log('🏢 Firm data on login:', firmData);
+            // console.log('🏢 Firm data on login:', firmData);
             
             // If firm has no subscription plan, create trial subscription
             if (!firmData.subscriptionPlan || firmData.subscriptionPlan === '') {
-              console.log('🎯 No subscription plan found, creating trial subscription...');
+              // console.log('🎯 No subscription plan found, creating trial subscription...');
               await SubscriptionService.createTrialSubscription(currentUser.firmId);
-              console.log('✅ Trial subscription created successfully');
+              // console.log('✅ Trial subscription created successfully');
             } else if (firmData.subscriptionStatus === 'trial') {
               // Check if trial has expired
               const trialStatus = await SubscriptionService.checkTrialStatus(currentUser.firmId);
               if (trialStatus.isExpired) {
-                console.log('⏰ Trial has expired:', trialStatus.message);
+                // console.log('⏰ Trial has expired:', trialStatus.message);
                 // You might want to show a modal or redirect to subscription page
               } else {
-                console.log('✅ Trial is active:', trialStatus.message);
+                // console.log('✅ Trial is active:', trialStatus.message);
               }
             }
           }
         } catch (error) {
-          console.error('❌ Error checking trial subscription:', error);
+          // console.error('❌ Error checking trial subscription:', error);
         }
       };
       
@@ -315,6 +315,7 @@ function AppContent() {
       return new Date(y, m - 1, d);
     };
 
+    // 1. Hearing Notifications (Existing)
     hearings.forEach(h => {
       if (!h.date) return;
       const hDate = parseDate(h.date);
@@ -396,6 +397,84 @@ function AppContent() {
       }
     });
 
+    // 2. Appointments Notifications (NEW)
+    appointments.forEach(apt => {
+      if (!apt.date) return;
+      const aptDate = parseDate(apt.date);
+      const diffTime = aptDate.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      // Only show appointments for today and upcoming
+      if (diffDays >= 0 && diffDays <= 1) {
+        const relatedCase = apt.relatedCaseId ? cases.find(c => c.id === apt.relatedCaseId) : null;
+        const relatedClient = apt.relatedClientId ? clients.find(c => c.id === apt.relatedClientId) : null;
+        
+        let title = '';
+        let urgency: 'critical' | 'high' | 'medium' | 'low' = 'medium';
+        let message = '';
+        
+        if (diffDays === 0) {
+          title = `موعد اليوم: ${apt.title}`;
+          urgency = 'high';
+          message = `الوقت: ${apt.startTime || 'غير محدد'} - ${apt.location || 'غير محدد'}`;
+        } else if (diffDays === 1) {
+          title = `موعد غداً: ${apt.title}`;
+          urgency = 'medium';
+          message = `الوقت: ${apt.startTime || 'غير محدد'} - ${apt.location || 'غير محدد'}`;
+        }
+
+        if (title) {
+          notificationList.push({
+            id: `appointment-${apt.id}`,
+            date: apt.date,
+            time: apt.startTime,
+            title,
+            message,
+            caseNumber: relatedCase?.caseNumber,
+            clientName: relatedClient?.name || relatedCase?.clientName,
+            caseId: apt.relatedCaseId,
+            clientId: apt.relatedClientId,
+            appointmentId: apt.id,
+            type: 'appointment',
+            urgency,
+            location: apt.location
+          });
+        }
+      }
+    });
+
+    // 3. Tasks Notifications (NEW)
+    tasks.forEach(task => {
+      // Only show high priority tasks that are not completed
+      if (task.status === 'completed') return;
+      
+      const isUrgent = task.priority === 'high';
+      const isInProgress = task.status === 'in_progress' || task.status === 'pending';
+      
+      if (isUrgent && isInProgress) {
+        const relatedCase = task.relatedCaseId ? cases.find(c => c.id === task.relatedCaseId) : null;
+        const assignedUser = task.assignedTo ? users.find(u => u.id === task.assignedTo) : null;
+        
+        const urgency: 'critical' | 'high' | 'medium' | 'low' = 'high';
+        const statusText = task.status === 'in_progress' ? 'جاري التنفيذ' : 'قيد الانتظار';
+        
+        notificationList.push({
+          id: `task-${task.id}`,
+          date: task.dueDate || today.toISOString().split('T')[0],
+          title: `مهمة مستعجلة: ${task.title}`,
+          message: `الحالة: ${statusText} - ${task.description || 'لا يوجد وصف'}`,
+          caseNumber: relatedCase?.caseNumber,
+          clientName: relatedCase?.clientName,
+          caseId: task.relatedCaseId,
+          taskId: task.id,
+          type: 'task',
+          urgency,
+          assignedTo: assignedUser?.name
+        });
+      }
+    });
+
+    // 4. POA Expiry Notifications (Existing)
     const poaWarningDate = new Date(today);
     poaWarningDate.setDate(today.getDate() + 30); 
 
@@ -436,13 +515,20 @@ function AppContent() {
       }
       return new Date(a.date).getTime() - new Date(b.date).getTime();
     });
-  }, [hearings, cases, clients]);
+  }, [hearings, cases, clients, appointments, tasks, users]);
 
-  const handleNotificationClick = (id: string, type: 'hearing' | 'poa_expiry' | 'task') => {
+  const handleNotificationClick = (id: string, type: 'hearing' | 'poa_expiry' | 'task' | 'appointment') => {
     if (type === 'poa_expiry') {
       setSelectedClientId(id);
       setCurrentPage('client-details');
+    } else if (type === 'appointment') {
+      // For appointments, navigate to appointments page
+      setCurrentPage('appointments');
+    } else if (type === 'task') {
+      // For tasks, navigate to tasks page
+      setCurrentPage('tasks');
     } else {
+      // For hearings, navigate to case details
       setSelectedCaseId(id); 
       setCurrentPage('case-details');
     }
@@ -464,10 +550,23 @@ function AppContent() {
 
   // Check subscription status
   const isSuperAdmin = currentUser?.email?.toLowerCase() === 'elswa770@gmail.com';
-  const isSubscriptionExpired = currentFirm && !isSuperAdmin && (
+  
+  // Check if user is actually in trial period
+  const isInTrialPeriod = currentFirm?.trialEndDate && new Date(currentFirm.trialEndDate) >= new Date();
+  
+  // Check if subscription is expired - only if NOT in trial period
+  const isSubscriptionExpired = currentFirm && !isSuperAdmin && !isInTrialPeriod && (
     currentFirm.subscriptionStatus === 'inactive' || 
     (currentFirm.subscriptionEndDate && new Date(currentFirm.subscriptionEndDate) < new Date())
   );
+
+  console.log('🔍 Subscription check:', {
+    isSuperAdmin,
+    isInTrialPeriod,
+    trialEndDate: currentFirm?.trialEndDate,
+    subscriptionStatus: currentFirm?.subscriptionStatus,
+    isSubscriptionExpired
+  });
 
   // Force redirect to subscription page if expired, unless they are super admin
   if (isSubscriptionExpired && currentPage !== 'subscription') {
@@ -763,7 +862,7 @@ function AppContent() {
     }
 
     if (currentPage === 'subscription' && currentFirm) {
-      return <Subscription currentFirm={currentFirm} />;
+      return <Subscription currentFirm={currentFirm} currentUser={currentUser} />;
     }
 
     // Determine the permission module ID for the current page
@@ -891,14 +990,26 @@ function AppContent() {
             />
           </Suspense>
         );
+      case 'archive':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <ArchivePage 
+              cases={cases}
+              clients={clients}
+              onUpdateCase={handleUpdateCase}
+            />
+          </Suspense>
+        );
       case 'fees':
         return (
           <Suspense fallback={<PageLoader />}>
             <Fees 
               cases={cases} 
               clients={clients}
-              onCaseClick={handleCaseClick}
-              onClientClick={handleClientClick}
+              hearings={hearings}
+              onUpdateCase={handleUpdateCase}
+              canViewIncome={hasAccess('fees')}
+              canViewExpenses={hasAccess('expenses')}
               readOnly={isReadOnly('fees')}
             />
           </Suspense>
@@ -917,6 +1028,21 @@ function AppContent() {
           hearings={hearings}
           onUpdateCase={handleUpdateCase}
         />;
+      case 'tasks':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <Tasks 
+              tasks={tasks}
+              cases={cases}
+              users={users}
+              onAddTask={handleAddTask}
+              onUpdateTask={handleUpdateTask}
+              onDeleteTask={handleDeleteTask}
+              onCaseClick={handleCaseClick}
+              readOnly={isReadOnly('tasks')}
+            />
+          </Suspense>
+        );
       case 'locations':
         return <Locations readOnly={isReadOnly('locations')} />;
       case 'calculators':

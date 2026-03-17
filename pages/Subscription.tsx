@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
-import { Firm, SubscriptionPlan } from '../types';
-import { CheckCircle, CreditCard, Shield, Zap, AlertTriangle, ArrowRight, Phone, Camera, Upload, Clock, CloudUpload, FileText, Cloud, LogIn } from 'lucide-react';
+import { Shield, CheckCircle, Clock, AlertTriangle, CreditCard, Upload, FileText, X, ChevronRight, Star, Zap, Users, Briefcase, Database, Phone, Camera, CloudUpload, Cloud, LogIn, ArrowUpDown, ArrowUp, ArrowDown, ArrowRight } from 'lucide-react';
+import { Firm, SubscriptionPlan, AppUser } from '../types';
 import { googleDriveService } from '../src/services/googleDriveService';
 import { SubscriptionService } from '../src/services/subscriptionService';
+import { addDoc, collection, db, getDocs } from '../firebase';
 
 interface SubscriptionProps {
   currentFirm: Firm;
+  currentUser?: AppUser | null;
 }
 
-const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
+const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser }) => {
   const [loading, setLoading] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -20,11 +20,83 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [paymentProofUrl, setPaymentProofUrl] = useState<string>('');
   const [trialStatus, setTrialStatus] = useState<{ isExpired: boolean; daysLeft: number; message: string } | null>(null);
+  const [trialEligibility, setTrialEligibility] = useState<{ canStart: boolean; message: string } | null>(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [useGoogleDrive, setUseGoogleDrive] = useState(true);
   const [isUploadingToDrive, setIsUploadingToDrive] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  
+  // Plan sorting state - Now uses admin-defined order only
+  const [planSortBy, setPlanSortBy] = useState<'name' | 'price' | 'users' | 'cases' | 'clients'>('price');
+  const [planSortOrder, setPlanSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  // Sort plans function - Uses admin-defined order first, then user preference
+  const sortPlans = (plansToSort: SubscriptionPlan[]) => {
+    // First, sort by admin-defined sortOrder if available
+    const adminSorted = [...plansToSort].sort((a, b) => {
+      if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
+        return a.sortOrder - b.sortOrder;
+      }
+      // Fallback to name if no sortOrder
+      return a.name.localeCompare(b.name);
+    });
+    
+    // If user wants to sort by other criteria, apply secondary sorting
+    if (planSortBy !== 'name' || planSortOrder !== 'asc') {
+      return adminSorted.sort((a, b) => {
+        let aValue: any;
+        let bValue: any;
+        
+        switch (planSortBy) {
+          case 'name':
+            aValue = a.name.toLowerCase();
+            bValue = b.name.toLowerCase();
+            break;
+          case 'price':
+            aValue = calculatePrice(a, billingCycle);
+            bValue = calculatePrice(b, billingCycle);
+            break;
+          case 'users':
+            aValue = a.maxUsers;
+            bValue = b.maxUsers;
+            break;
+          case 'cases':
+            aValue = a.maxCases;
+            bValue = b.maxCases;
+            break;
+          case 'clients':
+            aValue = a.maxClients;
+            bValue = b.maxClients;
+            break;
+          default:
+            aValue = calculatePrice(a, billingCycle);
+            bValue = calculatePrice(b, billingCycle);
+        }
+        
+        // Handle -1 (unlimited) values
+        if (aValue === -1) aValue = Infinity;
+        if (bValue === -1) bValue = Infinity;
+        
+        if (planSortOrder === 'asc') {
+          return aValue > bValue ? 1 : -1;
+        } else {
+          return aValue < bValue ? 1 : -1;
+        }
+      });
+    }
+    
+    return adminSorted;
+  };
+
+  const handlePlanSort = (sortBy: 'name' | 'price' | 'users' | 'cases' | 'clients') => {
+    if (planSortBy === sortBy) {
+      setPlanSortOrder(planSortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setPlanSortBy(sortBy);
+      setPlanSortOrder('asc');
+    }
+  };
 
   // Calculate price based on billing cycle
   const calculatePrice = (plan: SubscriptionPlan, cycle: 'monthly' | 'yearly') => {
@@ -66,6 +138,10 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
         try {
           const status = await SubscriptionService.checkTrialStatus(currentFirm.id);
           setTrialStatus(status);
+          
+          // Check trial eligibility
+          const eligibility = await SubscriptionService.canStartTrial(currentFirm.id);
+          setTrialEligibility(eligibility);
         } catch (error) {
           console.error('Error checking trial status:', error);
         }
@@ -201,11 +277,131 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
     fetchPlans();
   }, []);
 
-  console.log('Current plans in Subscription page:', plans);
+  // console.log('Current plans in Subscription page:', plans);
 
   const handleSubscribe = async (plan: SubscriptionPlan) => {
     setSelectedPlanForPayment(plan);
     setShowPaymentModal(true);
+  };
+
+  // Check if trial plan should be shown
+  const shouldShowTrialPlan = (): boolean => {
+    // Check if user is super admin - always show trial for testing
+    if (currentUser?.email === 'elswa770@gmail.com') {
+      return true;
+    }
+    
+    // Don't show trial plan if user has already used trial (from eligibility check)
+    if (trialEligibility && !trialEligibility.canStart) {
+      return false;
+    }
+    
+    // Check if trial has expired by date - THIS IS THE PRIMARY CHECK
+    if (currentFirm.trialEndDate) {
+      const trialEnd = new Date(currentFirm.trialEndDate);
+      const now = new Date();
+      
+      if (trialEnd < now) {
+        return false;
+      }
+    }
+    
+    // If trial is still active by date, show it regardless of subscriptionStatus
+    if (currentFirm.trialEndDate) {
+      const trialEnd = new Date(currentFirm.trialEndDate);
+      const now = new Date();
+      if (trialEnd >= now) {
+        return true;
+      }
+    }
+    
+    // Don't show trial if subscription is inactive and user had a trial plan AND trial is expired
+    if (currentFirm.subscriptionStatus === 'inactive' && 
+        currentFirm.subscriptionPlan === 'trial' && 
+        currentFirm.trialEndDate) {
+      const trialEnd = new Date(currentFirm.trialEndDate);
+      const now = new Date();
+      if (trialEnd < now) {
+        return false;
+      }
+    }
+    
+    // Don't show trial plan if user has inactive subscription and has used trial AND trial is expired
+    if (currentFirm.subscriptionStatus === 'inactive' && 
+        (currentFirm.hasUsedTrial || currentFirm.trialEndDate)) {
+      if (currentFirm.trialEndDate) {
+        const trialEnd = new Date(currentFirm.trialEndDate);
+        const now = new Date();
+        if (trialEnd < now) {
+          return false;
+        }
+      }
+    }
+    
+    // Don't show trial plan if user has used trial before and is not currently in trial AND trial is expired
+    if (currentFirm.hasUsedTrial && currentFirm.subscriptionStatus !== 'trial') {
+      if (currentFirm.trialEndDate) {
+        const trialEnd = new Date(currentFirm.trialEndDate);
+        const now = new Date();
+        if (trialEnd < now) {
+          return false;
+        }
+      }
+    }
+    
+    // Don't show trial plan if user has trialEndDate (indicates trial was used) and not currently in trial AND trial is expired
+    if (currentFirm.trialEndDate && currentFirm.subscriptionStatus !== 'trial') {
+      const trialEnd = new Date(currentFirm.trialEndDate);
+      const now = new Date();
+      if (trialEnd < now) {
+        return false;
+      }
+    }
+    
+    // If user has trialEndDate but no subscriptionStatus, assume trial is expired
+    if (currentFirm.trialEndDate && !currentFirm.subscriptionStatus) {
+      const trialEnd = new Date(currentFirm.trialEndDate);
+      const now = new Date();
+      if (trialEnd < now) {
+        return false;
+      }
+    }
+    
+    return true;
+  };
+
+  // Filter plans based on user eligibility
+  const getVisiblePlans = (): SubscriptionPlan[] => {
+    let allPlans = [...plans];
+    
+    // Always remove trial plan from Firestore plans to avoid duplication
+    allPlans = allPlans.filter(plan => plan.id !== 'trial');
+    
+    // Add trial plan if eligible
+    if (shouldShowTrialPlan()) {
+      const trialPlan: SubscriptionPlan = {
+        id: 'trial',
+        name: 'باقة تجريبية',
+        price: 0,
+        currency: 'EGP',
+        billingCycle: 'monthly',
+        maxUsers: 1,
+        maxCases: 2,
+        maxClients: 1,
+        maxStorageGB: 1,
+        features: [
+          'تجربة مجانية لمدة أسبوع',
+          'قضيتين كحد أقصى',
+          'مستخدم واحد فقط',
+          'موكل واحد فقط',
+          '1 جيجابايت تخزين'
+        ],
+        isActive: true
+      };
+      allPlans.unshift(trialPlan);
+    }
+    
+    return allPlans;
   };
 
   const isExpired = currentFirm.subscriptionStatus === 'inactive' || 
@@ -214,7 +410,9 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in">
       {/* Trial Status Alert */}
-      {currentFirm.subscriptionStatus === 'trial' && trialStatus && (
+      {(currentFirm.subscriptionStatus === 'trial' || 
+        (currentFirm.trialEndDate && new Date(currentFirm.trialEndDate) >= new Date())) && 
+        trialStatus && (
         <div className={`p-6 rounded-xl border ${trialStatus.isExpired ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800' : 'bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800'}`}>
           <div className="flex items-start gap-4">
             <div className={`p-2 rounded-lg ${trialStatus.isExpired ? 'bg-red-100 dark:bg-red-800' : 'bg-amber-100 dark:bg-amber-800'}`}>
@@ -246,6 +444,39 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
                   </div>
                 </div>
               )}
+              {trialStatus.isExpired && trialEligibility && !trialEligibility.canStart && (
+                <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                  <h4 className="font-semibold text-red-800 dark:text-red-200 mb-2">⚠️ انتبه:</h4>
+                  <p className="text-sm text-red-700 dark:text-red-300">
+                    {trialEligibility.message}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trial Used Alert - For users who had trial before */}
+      {currentFirm.subscriptionStatus !== 'trial' && trialEligibility && !trialEligibility.canStart && (
+        <div className="p-6 rounded-xl border bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800">
+          <div className="flex items-start gap-4">
+            <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-800">
+              <AlertTriangle className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-lg mb-2 text-amber-800 dark:text-amber-200">الباقة التجريبية مستخدمة</h3>
+              <p className="text-sm text-amber-700 dark:text-amber-300">
+                {trialEligibility.message}
+              </p>
+              <div className="mt-4 p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                <h4 className="font-semibold text-slate-800 dark:text-white mb-2">الخطوات التالية:</h4>
+                <ul className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
+                  <li>• اختر إحدى الباقات المدفوعة المناسبة لك</li>
+                  <li>• استمتع بجميع الميزات المتقدمة</li>
+                  <li>• احصل على دعم فني مخصص</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
@@ -319,10 +550,10 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
               <p className="text-sm text-slate-500 dark:text-slate-400 font-bold">حالة الاشتراك الحالي</p>
               <div className="flex items-center gap-2">
                 <h3 className="text-xl font-bold text-slate-800 dark:text-white">
-                  {plans.find(p => p.id === currentFirm.subscriptionPlan)?.name || currentFirm.subscriptionPlan}
-                  {plans.find(p => p.id === currentFirm.subscriptionPlan)?.billingCycle && (
+                  {getVisiblePlans().find(p => p.id === currentFirm.subscriptionPlan)?.name || currentFirm.subscriptionPlan}
+                  {getVisiblePlans().find(p => p.id === currentFirm.subscriptionPlan)?.billingCycle && (
                     <span className="text-lg font-normal text-slate-600 dark:text-slate-400">
-                      {' / '}{plans.find(p => p.id === currentFirm.subscriptionPlan)?.billingCycle === 'monthly' ? 'شهري' : 'سنوي'}
+                      {' / '}{getVisiblePlans().find(p => p.id === currentFirm.subscriptionPlan)?.billingCycle === 'monthly' ? 'شهري' : 'سنوي'}
                     </span>
                   )}
                 </h3>
@@ -341,17 +572,56 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
       )}
 
       {/* Pricing Plans */}
+      
+      {/* Sorting Controls */}
+      <div className="flex items-center justify-center gap-4 mb-8 p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+        <span className="text-sm font-medium text-slate-600 dark:text-slate-300">ترتيب الباقات حسب:</span>
+        <div className="flex gap-2 flex-wrap">
+          {[
+            { key: 'name', label: 'الاسم' },
+            { key: 'price', label: 'السعر' },
+            { key: 'users', label: 'المستخدمين' },
+            { key: 'cases', label: 'القضايا' },
+            { key: 'clients', label: 'العملاء' }
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => handlePlanSort(key as any)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1 ${
+                planSortBy === key
+                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 shadow-sm'
+                  : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600'
+              }`}
+            >
+              {label}
+              {planSortBy === key && (
+                planSortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {plans.map((plan) => (
+        {sortPlans(getVisiblePlans()).map((plan) => (
           <div
             key={plan.id}
             className={`relative bg-white dark:bg-slate-800 rounded-2xl shadow-lg transition-all duration-300 hover:shadow-2xl hover:scale-105 ${
-              plan.id === 'pro'
+              plan.id === 'trial'
+                ? 'border-2 border-emerald-500 ring-4 ring-emerald-500/20 transform'
+                : plan.id === 'pro'
                 ? 'border-2 border-indigo-500 ring-4 ring-indigo-500/20 transform'
                 : 'border border-slate-200 dark:border-slate-700 hover:border-indigo-300'
             }`}
           >
-            {/* Popular Badge */}
+            {/* Special Badges */}
+            {plan.id === 'trial' && (
+              <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                <div className="bg-gradient-to-r from-emerald-500 to-green-600 text-white px-6 py-2 rounded-full text-sm font-bold shadow-lg">
+                  🆓 تجربة مجانية
+                </div>
+              </div>
+            )}
             {plan.id === 'pro' && (
               <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
                 <div className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-6 py-2 rounded-full text-sm font-bold shadow-lg">
@@ -368,17 +638,23 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
                 {/* Price Display */}
                 <div className="mb-6">
                   <div className="relative inline-block">
-                    <div className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                      {getPriceDisplay(plan)}
-                    </div>
-                    {billingCycle === 'yearly' && (
+                    {plan.id === 'trial' ? (
+                      <div className="text-4xl font-bold bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">
+                        مجاناً
+                      </div>
+                    ) : (
+                      <div className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                        {getPriceDisplay(plan)}
+                      </div>
+                    )}
+                    {billingCycle === 'yearly' && plan.id !== 'trial' && (
                       <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs px-3 py-1 rounded-full font-bold animate-pulse">
                         وفر 10%
                       </div>
                     )}
                   </div>
                   
-                  {billingCycle === 'yearly' && (
+                  {billingCycle === 'yearly' && plan.id !== 'trial' && (
                     <div className="mt-4 p-4 bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
                       <div className="text-sm text-emerald-700 dark:text-emerald-300 font-semibold space-y-1">
                         <div className="flex justify-between">
@@ -396,13 +672,38 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
                       </div>
                     </div>
                   )}
+                  
+                  {plan.id === 'trial' && (
+                    <div className="mt-4 p-4 bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-900/20 dark:to-green-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                      <div className="text-sm text-emerald-700 dark:text-emerald-300 font-semibold space-y-1">
+                        <div className="flex justify-between">
+                          <span>المدة:</span>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">7 أيام</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>الحد الأقصى:</span>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">2 قضية</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>بعد التجربة:</span>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">اختر باقة مدفوعة</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
                 {/* Plan Tags */}
                 <div className="flex items-center justify-center gap-2 mb-6 flex-wrap">
-                  <div className="bg-gradient-to-r from-indigo-100 to-purple-100 dark:from-indigo-900/30 dark:to-purple-900/30 text-indigo-700 dark:text-indigo-300 text-xs px-3 py-2 rounded-full font-semibold border border-indigo-200 dark:border-indigo-800">
-                    {billingCycle === 'monthly' ? 'شهري' : 'سنوي'}
-                  </div>
+                  {plan.id === 'trial' ? (
+                    <div className="bg-gradient-to-r from-emerald-100 to-green-100 dark:from-emerald-900/30 dark:to-green-900/30 text-emerald-700 dark:text-emerald-300 text-xs px-3 py-2 rounded-full font-semibold border border-emerald-200 dark:border-emerald-800">
+                      🆓 تجريبية
+                    </div>
+                  ) : (
+                    <div className="bg-gradient-to-r from-indigo-100 to-purple-100 dark:from-indigo-900/30 dark:to-purple-900/30 text-indigo-700 dark:text-indigo-300 text-xs px-3 py-2 rounded-full font-semibold border border-indigo-200 dark:border-indigo-800">
+                      {plan.billingCycle === 'monthly' ? 'شهري' : 'سنوي'}
+                    </div>
+                  )}
                   {plan.maxUsers && (
                     <span className="bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 text-blue-700 dark:text-blue-300 text-xs px-3 py-2 rounded-full font-semibold border border-blue-200 dark:border-blue-800">
                       👥 {plan.maxUsers === -1 ? 'غير محدود' : `حتى ${plan.maxUsers} مستخدم`}
@@ -451,7 +752,9 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
                   onClick={() => handleSubscribe(plan)}
                   disabled={loading}
                   className={`w-full py-4 px-6 rounded-xl font-bold transition-all duration-300 flex items-center justify-center gap-3 text-lg ${
-                    plan.id === 'pro'
+                    plan.id === 'trial'
+                      ? 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105'
+                      : plan.id === 'pro'
                       ? 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105'
                       : 'bg-gradient-to-r from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 hover:from-slate-200 hover:to-slate-300 dark:hover:from-slate-600 dark:hover:to-slate-500 text-slate-800 dark:text-white border-2 border-slate-300 dark:border-slate-600 hover:border-indigo-400'
                   } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -463,7 +766,7 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
                     </>
                   ) : (
                     <>
-                      <span>اشترك الآن</span>
+                      <span>{plan.id === 'trial' ? 'ابدأ التجربة' : 'اشترك الآن'}</span>
                       <ArrowRight className="w-5 h-5" />
                     </>
                   )}
@@ -522,7 +825,7 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm }) => {
                     <span className="text-slate-600 dark:text-slate-300">السعر الأصلي:</span>
                     <span className="text-slate-800 dark:text-white">
                       {selectedPlanForPayment.price} {selectedPlanForPayment.currency}
-                      {billingCycle === 'yearly' && '/شهري'}
+                      {billingCycle === 'yearly' ? '/شهري' : '/شهري'}
                     </span>
                   </div>
                   {billingCycle === 'yearly' && (

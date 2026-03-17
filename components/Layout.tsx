@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { LayoutDashboard, Briefcase, Users, Gavel, FileText, BrainCircuit, LogOut, Menu, Bell, Calendar, X, Clock, AlertTriangle, CheckCircle, ChevronRight, ChevronLeft, Settings, BarChart3, Wallet, File, Search, Library, PlusCircle, Shield, CheckSquare, Map, Calculator, PenTool, Archive, Scale, Wifi, WifiOff, Cloud, Timer } from 'lucide-react';
+import { LayoutDashboard, Briefcase, Users, Gavel, FileText, BrainCircuit, LogOut, Menu, Bell, Calendar, X, Clock, AlertTriangle, CheckCircle, ChevronRight, ChevronLeft, Settings, BarChart3, Wallet, File, Search, Library, PlusCircle, Shield, CheckSquare, Map, Calculator, PenTool, Archive, Scale, Wifi, WifiOff, Cloud, Timer, ChevronDown, ChevronUp } from 'lucide-react';
 import { AppUser } from '../types';
 import { offlineManager } from '../services/offlineManager';
 import { SubscriptionService } from '../src/services/subscriptionService';
@@ -17,8 +17,12 @@ interface NotificationItem {
   caseId?: string; 
   clientId?: string;
   hearingId?: string;
-  type: 'hearing' | 'poa_expiry' | 'task'; 
+  appointmentId?: string;
+  taskId?: string;
+  type: 'hearing' | 'poa_expiry' | 'task' | 'appointment'; 
   urgency: 'critical' | 'high' | 'medium' | 'low';
+  location?: string;
+  assignedTo?: string;
 }
 
 interface LayoutProps {
@@ -26,7 +30,7 @@ interface LayoutProps {
   activePage: string;
   onNavigate: (page: string) => void;
   notifications?: NotificationItem[];
-  onNotificationClick?: (id: string, type: 'hearing' | 'poa_expiry' | 'task') => void;
+  onNotificationClick?: (id: string, type: 'hearing' | 'poa_expiry' | 'task' | 'appointment') => void;
   currentUser?: AppUser | null;
   onLogout?: () => void;
 }
@@ -35,9 +39,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
   // Sidebar State
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  
-  // Notification State
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [collapsedSections, setCollapsedSections] = useState<{ [key: string]: boolean }>({});
+  const [subscriptionStatus, setSubscriptionStatus] = useState<'active' | 'inactive' | 'trial'>('active');
   const notificationRef = useRef<HTMLDivElement>(null);
   const mobileNotificationRef = useRef<HTMLDivElement>(null);
   
@@ -141,6 +146,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
   const getNotificationIcon = (type: string, urgency: string) => {
     if (type === 'poa_expiry') return AlertTriangle;
     if (type === 'task') return CheckCircle;
+    if (type === 'appointment') return Calendar;
     if (urgency === 'critical') return AlertTriangle;
     return Calendar;
   };
@@ -148,54 +154,132 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
   // Navigation Groups Configuration
   const navGroups = [
     {
-      title: 'الرئيسية',
+      title: 'لوحة التحكم',
       items: [
-        { id: 'dashboard', label: 'لوحة التحكم', icon: LayoutDashboard },
-        { id: 'office-admin', label: 'الإدارة العليا', icon: Shield },
+        { id: 'dashboard', label: 'نظرة عامة', icon: LayoutDashboard },
         { id: 'ai-assistant', label: 'المساعد الذكي', icon: BrainCircuit, special: true },
       ]
     },
     {
-      title: 'إدارة العمل',
+      title: 'إدارة القضايا',
       items: [
-        { id: 'cases', label: 'القضايا', icon: Briefcase },
+        { id: 'cases', label: 'جميع القضايا', icon: Briefcase },
         { id: 'hearings', label: 'الجلسات', icon: Gavel },
         { id: 'appointments', label: 'المواعيد', icon: Calendar },
         { id: 'tasks', label: 'المهام', icon: CheckSquare },
-        { id: 'generator', label: 'إدارة العقود', icon: PenTool },
+        { id: 'generator', label: 'العقود والمحررات', icon: PenTool },
+      ]
+    },
+    {
+      title: 'إدارة العملاء',
+      items: [
         { id: 'clients', label: 'الموكلين', icon: Users },
-        { id: 'lawyers', label: 'المحامين', icon: Scale },
-        { id: 'locations', label: 'دليل المحاكم', icon: Map },
+        { id: 'lawyers', label: 'فريق المحامين', icon: Scale },
+      ]
+    },
+    {
+      title: 'المصادر القانونية',
+      items: [
         { id: 'references', label: 'المراجع القانونية', icon: Library },
+        { id: 'locations', label: 'دليل المحاكم', icon: Map },
         { id: 'calculators', label: 'الحاسبات القانونية', icon: Calculator },
       ]
     },
     {
-      title: 'المكتب والإدارة',
+      title: 'المستندات والأرشيف',
       items: [
         { id: 'documents', label: 'المستندات', icon: File },
-        { id: 'archive', label: 'الأرشيف', icon: Archive },
-        { id: 'fees', label: 'الأتعاب والمصروفات', icon: Wallet },
-        { id: 'reports', label: 'التقارير', icon: BarChart3 },
+        { id: 'archive', label: 'الأرشيف الرقمي', icon: Archive },
       ]
     },
     {
-      title: 'النظام',
+      title: 'المالية والتقارير',
       items: [
-        { id: 'settings', label: 'الإعدادات', icon: Settings },
-        { id: 'subscription', label: 'الاشتراك والباقات', icon: Shield },
+        { id: 'fees', label: 'الأتعاب والمصروفات', icon: Wallet },
+        { id: 'reports', label: 'التقارير والإحصائيات', icon: BarChart3 },
+      ]
+    },
+    {
+      title: 'إدارة النظام',
+      items: [
+        { id: 'settings', label: 'الإعدادات العامة', icon: Settings },
+        { id: 'subscription', label: 'الاشتراكات والباقات', icon: Shield },
+        { id: 'office-admin', label: 'إدارة المكتب', icon: Shield },
         ...(currentUser?.email === 'elswa770@gmail.com' ? [{ id: 'super-admin', label: 'الإدارة العليا', icon: Shield }] : [])
       ]
     }
   ];
 
+  // Toggle section collapse
+  const toggleSection = (sectionTitle: string) => {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [sectionTitle]: !prev[sectionTitle]
+    }));
+  };
+
+  // Check subscription status on component mount
+  useEffect(() => {
+    const checkSubscriptionStatus = async () => {
+      if (currentUser?.firmId) {
+        try {
+          const firm = await SubscriptionService.getCurrentFirm(currentUser.firmId);
+          if (firm) {
+            // If trial is expired, update status
+            if (firm.subscriptionStatus === 'trial') {
+              await SubscriptionService.checkTrialStatus(currentUser.firmId);
+              const updatedFirm = await SubscriptionService.getCurrentFirm(currentUser.firmId);
+              setSubscriptionStatus(updatedFirm?.subscriptionStatus || 'inactive');
+            } else {
+              setSubscriptionStatus(firm.subscriptionStatus);
+            }
+          }
+        } catch (error) {
+          console.error('Error checking subscription status:', error);
+          setSubscriptionStatus('inactive');
+        }
+      }
+    };
+
+    checkSubscriptionStatus();
+  }, [currentUser?.firmId]);
+
+  // Auto-expand sections with active items
+  useEffect(() => {
+    const newCollapsedSections = { ...collapsedSections };
+    visibleGroups.forEach(group => {
+      const hasActiveItem = group.items.some(item => activePage === item.id);
+      if (hasActiveItem) {
+        newCollapsedSections[group.title] = false;
+      }
+    });
+    setCollapsedSections(newCollapsedSections);
+  }, [activePage]);
+
   // Helper to check permissions
   const checkPermission = (moduleId: string): boolean => {
     if (!currentUser) return false;
     
+    // Super admin always has access
+    if (currentUser.email === 'elswa770@gmail.com') {
+      return true;
+    }
+    
     // Admin always has access
     if (currentUser.username === 'admin' || currentUser.roleLabel === 'مدير النظام') {
       return true;
+    }
+
+    // Check subscription status for non-super admin users
+    if (moduleId !== 'subscription' && moduleId !== 'super-admin') {
+      // Check if user is actually in trial period
+      const isInTrialPeriod = currentUser.firmId && subscriptionStatus === 'trial' && 
+        currentFirm?.trialEndDate && new Date(currentFirm.trialEndDate) >= new Date();
+      
+      // Block access if subscription is inactive AND not in trial period
+      if (subscriptionStatus === 'inactive' && !isInTrialPeriod) {
+        return false;
+      }
     }
 
     if (moduleId === 'subscription' || moduleId === 'super-admin') {
@@ -220,6 +304,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
 
     if (id === 'hearings') return urgentNotifications.filter(n => n.type === 'hearing').length;
     if (id === 'clients') return urgentNotifications.filter(n => n.type === 'poa_expiry').length;
+    if (id === 'appointments') return urgentNotifications.filter(n => n.type === 'appointment').length;
+    if (id === 'tasks') return urgentNotifications.filter(n => n.type === 'task').length;
     return 0;
   };
 
@@ -248,8 +334,17 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
                 key={notif.id} 
                 onClick={() => {
                   if (onNotificationClick) {
-                    const targetId = notif.type === 'poa_expiry' ? notif.clientId : notif.caseId;
-                    onNotificationClick(targetId || '', notif.type);
+                    let targetId = '';
+                    if (notif.type === 'poa_expiry') {
+                      targetId = notif.clientId || '';
+                    } else if (notif.type === 'appointment') {
+                      targetId = notif.appointmentId || '';
+                    } else if (notif.type === 'task') {
+                      targetId = notif.taskId || '';
+                    } else {
+                      targetId = notif.caseId || '';
+                    }
+                    onNotificationClick(targetId, notif.type);
                   }
                   setIsNotificationsOpen(false);
                 }}
@@ -275,6 +370,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
                     )}
                     <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400 mt-1">
                        {notif.clientName && <span className="font-medium text-slate-500 dark:text-slate-400">{notif.clientName}</span>}
+                       {notif.assignedTo && <span className="font-medium text-blue-500 dark:text-blue-400">المكلف: {notif.assignedTo}</span>}
+                       {notif.location && <span className="font-medium text-green-500 dark:text-green-400">المكان: {notif.location}</span>}
                        {notif.time && <span className="font-bold text-primary-600">• {formatTime(notif.time)}</span>}
                     </div>
                   </div>
@@ -375,80 +472,102 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
         )}
 
         {/* Navigation Items */}
-        <nav className="flex-1 px-3 py-2 space-y-6 overflow-y-auto overflow-x-hidden custom-scrollbar">
-          {visibleGroups.map((group, groupIndex) => (
-             <div key={groupIndex}>
-                {!isSidebarCollapsed && (
-                   <h3 className="px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      {group.title}
-                   </h3>
-                )}
-                <div className="space-y-1">
-                   {group.items.map((item) => {
-                      const Icon = item.icon;
-                      const isActive = activePage === item.id;
-                      const badgeCount = getBadgeCount(item.id);
+        <nav className="flex-1 px-3 py-2 space-y-3 overflow-y-auto overflow-x-hidden custom-scrollbar">
+          {visibleGroups.map((group, groupIndex) => {
+            const isCollapsed = collapsedSections[group.title] || false;
+            const hasActiveItem = group.items.some(item => activePage === item.id);
+            
+            return (
+              <div key={groupIndex} className="border border-slate-800/50 rounded-lg overflow-hidden">
+                {/* Section Header */}
+                <button
+                  onClick={() => toggleSection(group.title)}
+                  className={`
+                    w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider
+                    hover:text-slate-400 hover:bg-slate-800/30 transition-all duration-200
+                    ${hasActiveItem ? 'text-slate-300 bg-slate-800/20' : ''}
+                    ${isSidebarCollapsed ? 'px-2 justify-center' : ''}
+                  `}
+                  title={isSidebarCollapsed ? group.title : ''}
+                >
+                  {!isSidebarCollapsed && (
+                    <>
+                      <span>{group.title}</span>
+                      <div className="flex items-center gap-2">
+                        {hasActiveItem && (
+                          <div className="w-2 h-2 bg-primary-500 rounded-full animate-pulse"></div>
+                        )}
+                        <ChevronDown 
+                          className={`w-3 h-3 transition-transform duration-200 ${isCollapsed ? 'rotate-180' : ''}`}
+                        />
+                      </div>
+                    </>
+                  )}
+                  {isSidebarCollapsed && (
+                    <div className="w-3 h-3 bg-slate-600 rounded"></div>
+                  )}
+                </button>
 
-                      return (
-                         <button
+                {/* Section Content */}
+                {!isSidebarCollapsed && (
+                  <div className={`
+                    transition-all duration-300 ease-in-out overflow-hidden
+                    ${isCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}
+                  `}>
+                    <div className="space-y-1 p-1">
+                      {group.items.map((item) => {
+                        const Icon = item.icon;
+                        const isActive = activePage === item.id;
+                        const badgeCount = getBadgeCount(item.id);
+
+                        return (
+                          <button
                             key={item.id}
                             onClick={() => {
-                               onNavigate(item.id);
-                               setIsMobileMenuOpen(false);
+                              onNavigate(item.id);
+                              setIsMobileMenuOpen(false);
                             }}
                             className={`
-                               w-full flex items-center relative group rounded-xl transition-all duration-200
-                               ${isSidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2.5 gap-3'}
-                               ${isActive 
-                                  ? 'bg-slate-800 text-white shadow-md shadow-slate-900/20' 
-                                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
-                               }
-                               ${item.special && !isActive ? 'text-indigo-400 hover:text-indigo-300' : ''}
+                              w-full flex items-center relative group rounded-lg transition-all duration-200
+                              px-3 py-2 gap-3
+                              ${isActive 
+                                ? 'bg-slate-800 text-white shadow-md shadow-slate-900/20' 
+                                : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
+                              }
+                              ${item.special && !isActive ? 'text-indigo-400 hover:text-indigo-300' : ''}
                             `}
-                            title={isSidebarCollapsed ? item.label : ''}
-                         >
+                          >
                             {/* Active Indicator Line (Left) */}
                             {isActive && (
-                               <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-500 rounded-l-full"></div>
+                              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-500 rounded-l-full"></div>
                             )}
 
                             <Icon className={`
-                               ${isSidebarCollapsed ? 'w-6 h-6' : 'w-5 h-5'} 
-                               ${isActive ? 'text-primary-400' : ''} 
-                               ${item.special && !isActive ? 'text-indigo-400' : ''}
-                               transition-colors
+                              w-5 h-5 
+                              ${isActive ? 'text-primary-400' : ''} 
+                              ${item.special && !isActive ? 'text-indigo-400' : ''}
+                              transition-colors
                             `} />
                             
-                            {!isSidebarCollapsed && (
-                               <div className="flex-1 flex justify-between items-center">
-                                  <span className={`font-medium text-sm ${isActive ? 'text-white' : ''}`}>
-                                     {item.label}
-                                  </span>
-                                  {badgeCount > 0 && (
-                                     <span className="bg-red-500 text-white text-[10px] px-1.5 min-w-[1.25rem] h-5 rounded-full flex items-center justify-center font-bold">
-                                        {badgeCount}
-                                     </span>
-                                  )}
-                               </div>
-                            )}
-
-                            {/* Collapsed Mode Badge */}
-                            {isSidebarCollapsed && badgeCount > 0 && (
-                               <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-slate-900"></span>
-                            )}
-
-                            {/* Tooltip for collapsed mode */}
-                            {isSidebarCollapsed && (
-                               <div className="absolute right-full mr-2 px-3 py-1.5 bg-slate-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none shadow-xl border border-slate-700 font-medium">
-                                  {item.label}
-                               </div>
-                            )}
-                         </button>
-                      );
-                   })}
-                </div>
-             </div>
-          ))}
+                            <div className="flex-1 flex justify-between items-center">
+                              <span className={`font-medium text-sm ${isActive ? 'text-white' : ''}`}>
+                                {item.label}
+                              </span>
+                              {badgeCount > 0 && (
+                                <span className="bg-red-500 text-white text-[10px] px-1.5 min-w-[1.25rem] h-5 rounded-full flex items-center justify-center font-bold">
+                                  {badgeCount}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         {/* Footer / User Profile */}
@@ -479,6 +598,31 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
 
       {/* --- Main Content Area --- */}
       <main className="flex-1 h-[calc(100vh-64px)] md:h-screen overflow-y-auto bg-slate-50 dark:bg-slate-950 relative flex flex-col transition-colors duration-300">
+        {/* Subscription Inactive Warning */}
+        {subscriptionStatus === 'inactive' && currentUser?.email !== 'elswa770@gmail.com' && (
+          <div className="bg-red-50 border-b border-red-200 dark:bg-red-900/20 dark:border-red-800 px-4 py-3">
+            <div className="flex items-center justify-between max-w-7xl mx-auto">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                <div>
+                  <p className="text-sm font-bold text-red-800 dark:text-red-200">
+                    اشتراكك غير نشط
+                  </p>
+                  <p className="text-xs text-red-600 dark:text-red-400">
+                    انتهت فترة التجربة. يرجى الاشتراك في إحدى الباقات للاستمرار في استخدام التطبيق.
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => onNavigate('subscription')}
+                className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 transition-colors"
+              >
+                تجديد الاشتراك
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Desktop Topbar */}
         <header className="bg-white dark:bg-slate-900 shadow-sm border-b border-slate-200 dark:border-slate-800 px-8 py-4 hidden md:flex justify-between items-center sticky top-0 z-30 transition-colors duration-300">
           <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-2">

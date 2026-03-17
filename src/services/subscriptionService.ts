@@ -9,6 +9,12 @@ export class SubscriptionService {
     try {
       console.log('🎯 Creating trial subscription for firm:', firmId);
       
+      // Check if firm has already used trial
+      const hasUsedTrial = await this.hasUsedTrialBefore(firmId);
+      if (hasUsedTrial) {
+        throw new Error('لقد استخدمت الباقة التجريبية من قبل. لا يمكن تفعيلها مرة أخرى.');
+      }
+      
       const trialEndDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days from now
       
       // Update firm with trial subscription (without creating subscription plan document)
@@ -16,7 +22,8 @@ export class SubscriptionService {
         subscriptionPlan: 'trial',
         trialStartDate: new Date().toISOString(),
         trialEndDate: trialEndDate,
-        subscriptionStatus: 'trial'
+        subscriptionStatus: 'trial',
+        hasUsedTrial: true // Mark that trial has been used
       });
       
       console.log('✅ Trial subscription created successfully');
@@ -26,11 +33,52 @@ export class SubscriptionService {
     }
   }
 
+  // Check if firm has used trial before
+  static async hasUsedTrialBefore(firmId: string): Promise<boolean> {
+    try {
+      const firm = await this.getCurrentFirm(firmId);
+      if (!firm) return false;
+      
+      // Check if firm has already used trial (either currently active or previously used)
+      return firm.hasUsedTrial === true || 
+             firm.subscriptionStatus === 'trial' || 
+             (firm.trialEndDate && new Date(firm.trialEndDate) < new Date());
+    } catch (error) {
+      console.error('❌ Error checking trial usage:', error);
+      return false;
+    }
+  }
+
+  // Check if firm can start new trial
+  static async canStartTrial(firmId: string): Promise<{ canStart: boolean; message: string }> {
+    try {
+      const hasUsedTrial = await this.hasUsedTrialBefore(firmId);
+      
+      if (hasUsedTrial) {
+        return { 
+          canStart: false, 
+          message: 'لقد استخدمت الباقة التجريبية من قبل. لا يمكن تفعيلها مرة أخرى. يرجى الاشتراك في إحدى الباقات المتوفرة.' 
+        };
+      }
+      
+      return { 
+        canStart: true, 
+        message: 'يمكنك تفعيل الباقة التجريبية لمدة 7 أيام.' 
+      };
+    } catch (error) {
+      console.error('❌ Error checking trial eligibility:', error);
+      return { 
+        canStart: false, 
+        message: 'حدث خطأ في التحقق من الأهلية للباقة التجريبية.' 
+      };
+    }
+  }
+
   // Check if trial has expired
   static async checkTrialStatus(firmId: string): Promise<{ isExpired: boolean; daysLeft: number; message: string }> {
     try {
       const firm = await this.getCurrentFirm(firmId);
-      if (!firm || firm.subscriptionStatus !== 'trial') {
+      if (!firm || !firm.trialEndDate) {
         return { isExpired: false, daysLeft: 0, message: '' };
       }
       
@@ -39,6 +87,9 @@ export class SubscriptionService {
       const daysLeft = Math.ceil((trialEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
       
       if (daysLeft <= 0) {
+        // Automatically update subscription status to inactive
+        await this.updateExpiredTrial(firmId);
+        
         return { 
           isExpired: true, 
           daysLeft: 0, 
@@ -54,6 +105,19 @@ export class SubscriptionService {
     } catch (error) {
       console.error('❌ Error checking trial status:', error);
       return { isExpired: true, daysLeft: 0, message: 'حدث خطأ في التحقق من حالة التجربة' };
+    }
+  }
+
+  // Update expired trial to inactive status
+  static async updateExpiredTrial(firmId: string): Promise<void> {
+    try {
+      await updateDoc(doc(db, 'firms', firmId), {
+        subscriptionStatus: 'inactive',
+        subscriptionEndDate: new Date().toISOString()
+      });
+      console.log('✅ Updated expired trial to inactive status');
+    } catch (error) {
+      console.error('❌ Error updating expired trial:', error);
     }
   }
   
