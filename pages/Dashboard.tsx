@@ -19,6 +19,7 @@ interface DashboardProps {
   onUpdateHearing?: (hearing: Hearing) => void;
   onAddHearing?: (hearing: Hearing) => void;
   readOnly?: boolean;
+  currentUser?: any; // Add currentUser prop
 }
 
 const StatCard = ({ title, value, subtext, icon: Icon, color, onClick }: { title: string, value: string | number, subtext?: string, icon: any, color: string, onClick?: () => void }) => (
@@ -34,7 +35,7 @@ const StatCard = ({ title, value, subtext, icon: Icon, color, onClick }: { title
   </div>
 );
 
-const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appointments = [], tasks = [], activities = [], onUpdateTask, onNavigate, onCaseClick, onUpdateCase, onUpdateClient, onUpdateHearing, onAddHearing, readOnly = false }) => {
+const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appointments = [], tasks = [], activities = [], onUpdateTask, onNavigate, onCaseClick, onUpdateCase, onUpdateClient, onUpdateHearing, onAddHearing, readOnly = false, currentUser }) => {
   // console.log('Dashboard component mounted with:', {
   //   onUpdateHearing: !!onUpdateHearing,
   //   onAddHearing: !!onAddHearing,
@@ -475,7 +476,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                      المهام المطلوبة
                   </h3>
                   {!readOnly && (
-                    <button className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400"><Plus className="w-4 h-4" /></button>
+                    <button 
+                      className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400"
+                      title="إضافة مهمة جديدة"
+                      aria-label="إضافة مهمة جديدة"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
                   )}
                </div>
                <div className="divide-y divide-slate-50 dark:divide-slate-700 max-h-80 overflow-y-auto">
@@ -529,6 +536,12 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                                     <span className="font-bold">{act.user}</span> قام بـ {act.action}
                                  </p>
                                  <p className="text-xs text-primary-600 dark:text-primary-400 font-bold mt-0.5">{act.target}</p>
+                                 {/* Show firm name for super admin */}
+                                 {currentUser?.email?.toLowerCase() === 'elswa770@gmail.com' && act.firmId && (
+                                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                      الشركة: {act.firmId}
+                                   </p>
+                                 )}
                               </div>
                               <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
                                  {new Date(act.timestamp).toLocaleTimeString('ar-EG', {hour: '2-digit', minute:'2-digit'})}
@@ -630,7 +643,13 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md animate-in zoom-in-95 duration-200">
                <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
                   <h3 className="font-bold text-lg text-slate-800 dark:text-white">رفع مستند جديد (سريع)</h3>
-                  <button onClick={() => setIsUploadModalOpen(false)}><X className="w-5 h-5 text-slate-400 hover:text-red-500" /></button>
+                  <button 
+                    onClick={() => setIsUploadModalOpen(false)}
+                    title="إغلاق النافذة"
+                    aria-label="إغلاق النافذة"
+                  >
+                    <X className="w-5 h-5 text-slate-400 hover:text-red-500" />
+                  </button>
                </div>
                
                <form onSubmit={handleSaveDocument} className="p-6 space-y-4">
@@ -640,6 +659,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                         type="button"
                         onClick={() => { setUploadData({ ...uploadData, targetType: 'case', targetId: '', docType: 'contract' }); }}
                         className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${uploadData.targetType === 'case' ? 'bg-white dark:bg-slate-600 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                        title="اخيار رفع مستند لقضية"
+                        aria-label="اخيار رفع مستند لقضية"
                      >
                         <Briefcase className="w-4 h-4 inline-block ml-2" /> خاص بقضية
                      </button>
@@ -647,6 +668,8 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                         type="button"
                         onClick={() => { setUploadData({ ...uploadData, targetType: 'client', targetId: '', docType: 'national_id' }); }}
                         className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${uploadData.targetType === 'client' ? 'bg-white dark:bg-slate-600 text-green-600 dark:text-green-300 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                        title="اخيار رفع مستند لموكل"
+                        aria-label="اخيار رفع مستند لموكل"
                      >
                         <User className="w-4 h-4 inline-block ml-2" /> خاص بموكل
                      </button>
@@ -662,6 +685,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                         className="w-full border border-slate-300 dark:border-slate-600 p-2 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
                         value={uploadData.targetId}
                         onChange={e => setUploadData({ ...uploadData, targetId: e.target.value })}
+                        aria-label={uploadData.targetType === 'case' ? 'اختر القضية' : 'اختر الموكل'}
                      >
                         <option value="">-- اختر --</option>
                         {uploadData.targetType === 'case' 
@@ -675,6 +699,16 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                   <div 
                      onClick={() => fileInputRef.current?.click()}
                      className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${uploadData.file ? 'border-primary-300 bg-primary-50 dark:bg-primary-900/20' : 'border-slate-300 dark:border-slate-600 hover:border-primary-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                     role="button"
+                     tabIndex={0}
+                     title="اضغط لاختيار ملف"
+                     aria-label="اضغط لاختيار ملف للرفع"
+                     onKeyDown={(e) => {
+                       if (e.key === 'Enter' || e.key === ' ') {
+                         e.preventDefault();
+                         fileInputRef.current?.click();
+                       }
+                     }}
                   >
                      <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} />
                      {uploadData.file ? (
@@ -703,6 +737,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                            value={uploadData.name}
                            onChange={e => setUploadData({ ...uploadData, name: e.target.value })}
                            placeholder="مثال: عقد بيع ابتدائي"
+                           aria-label="اسم المستند"
                         />
                      </div>
                      <div>
@@ -711,6 +746,7 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                            className="w-full border border-slate-300 dark:border-slate-600 p-2 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
                            value={uploadData.docType}
                            onChange={e => setUploadData({ ...uploadData, docType: e.target.value })}
+                           aria-label="تصنيف المستند"
                         >
                            {uploadData.targetType === 'case' ? (
                               <>

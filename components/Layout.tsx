@@ -4,6 +4,7 @@ import { LayoutDashboard, Briefcase, Users, Gavel, FileText, BrainCircuit, LogOu
 import { AppUser } from '../types';
 import { offlineManager } from '../services/offlineManager';
 import { SubscriptionService } from '../src/services/subscriptionService';
+import MobileNavigation from './MobileNavigation';
 
 interface NotificationItem {
   id: string;
@@ -43,6 +44,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [collapsedSections, setCollapsedSections] = useState<{ [key: string]: boolean }>({});
   const [subscriptionStatus, setSubscriptionStatus] = useState<'active' | 'inactive' | 'trial'>('active');
+  const [currentFirm, setCurrentFirm] = useState<any>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
   const mobileNotificationRef = useRef<HTMLDivElement>(null);
   
@@ -203,6 +205,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
       title: 'إدارة النظام',
       items: [
         { id: 'settings', label: 'الإعدادات العامة', icon: Settings },
+        { id: 'advanced-settings', label: 'الإعدادات المتقدمة', icon: Settings },
         { id: 'subscription', label: 'الاشتراكات والباقات', icon: Shield },
         { id: 'office-admin', label: 'إدارة المكتب', icon: Shield },
         ...(currentUser?.email === 'elswa770@gmail.com' ? [{ id: 'super-admin', label: 'الإدارة العليا', icon: Shield }] : [])
@@ -255,6 +258,51 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
     });
     setCollapsedSections(newCollapsedSections);
   }, [activePage]);
+
+  // Listen for subscription updates from SuperAdmin
+  useEffect(() => {
+    const handleSubscriptionUpdate = (event: any) => {
+      console.log('Subscription update event received:', event.detail);
+      if (event.detail?.status) {
+        setSubscriptionStatus(event.detail.status);
+      }
+      if (event.detail?.firm) {
+        setCurrentFirm(event.detail.firm);
+      }
+    };
+
+    window.addEventListener('subscriptionUpdated', handleSubscriptionUpdate);
+
+    // Listen for messages from iframe (if any)
+    const handleMessage = (event: any) => {
+      if (event.data?.type === 'SUBSCRIPTION_UPDATED' && event.data?.firmId === currentFirm?.id) {
+        setSubscriptionStatus('active');
+        // Re-check subscription status by calling the function directly
+        const recheckStatus = async () => {
+          if (currentUser?.firmId) {
+            try {
+              const firm = await SubscriptionService.getCurrentFirm(currentUser.firmId);
+              if (firm) {
+                setSubscriptionStatus(firm.subscriptionStatus);
+                setCurrentFirm(firm);
+              }
+            } catch (error) {
+              console.error('Error rechecking subscription status:', error);
+            }
+          }
+        };
+        recheckStatus();
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    // Cleanup on unmount
+    return () => {
+      window.removeEventListener('subscriptionUpdated', handleSubscriptionUpdate);
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [currentFirm?.id]);
 
   // Helper to check permissions
   const checkPermission = (moduleId: string): boolean => {
@@ -398,29 +446,22 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col md:flex-row overflow-hidden transition-colors duration-300">
       
-      {/* --- Mobile Header --- */}
-      <div className="md:hidden bg-white dark:bg-slate-900 p-4 flex justify-between items-center shadow-sm border-b border-slate-200 dark:border-slate-800 z-50">
-        <h1 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-          <Scale className="w-6 h-6 text-primary-600" />
-          الميزان
-        </h1>
-        <div className="flex items-center gap-4">
-          <button 
-            className="relative text-slate-600 dark:text-slate-300"
-            onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-          >
-             <Bell className="w-6 h-6" />
-             {notifications.length > 0 && (
-               <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold">
-                 {notifications.length}
-               </span>
-             )}
-          </button>
-          <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
-            <Menu className="w-6 h-6 text-slate-600 dark:text-slate-300" />
-          </button>
-        </div>
+      {/* --- Mobile Navigation (NEW) --- */}
+      <div className="md:hidden">
+        <MobileNavigation
+          activePage={activePage}
+          onNavigate={onNavigate}
+          currentUser={currentUser}
+          notificationsCount={notifications.length}
+          onLogout={onLogout}
+          theme="auto"
+          pinnedItems={[]}
+          onNotificationsToggle={() => setIsNotificationsOpen(!isNotificationsOpen)}
+        />
       </div>
+
+      {/* --- Legacy Mobile Header (REMOVED) --- */}
+      {/* Old mobile header is now replaced by MobileNavigation */}
 
       {/* --- Sidebar (Desktop & Mobile) --- */}
       <aside className={`
@@ -598,6 +639,27 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
 
       {/* --- Main Content Area --- */}
       <main className="flex-1 h-[calc(100vh-64px)] md:h-screen overflow-y-auto bg-slate-50 dark:bg-slate-950 relative flex flex-col transition-colors duration-300">
+        {/* Mobile Notification Dropdown Overlay */}
+        {isNotificationsOpen && (
+           <div 
+             className="fixed inset-0 bg-black/50 z-40 md:hidden"
+             onClick={() => setIsNotificationsOpen(false)}
+           >
+              <div 
+                className="absolute top-16 left-4 right-4 bg-white dark:bg-slate-800 rounded-xl shadow-xl overflow-hidden"
+                onClick={e => e.stopPropagation()}
+                ref={mobileNotificationRef}
+              >
+                  <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
+                      <h3 className="font-bold text-slate-800 dark:text-white text-sm">التنبيهات</h3>
+                      <button onClick={() => setIsNotificationsOpen(false)} title="إغلاق الإشعارات">
+                        <X className="w-5 h-5 text-slate-400" />
+                      </button>
+                   </div>
+                   {renderNotificationsList()}
+              </div>
+           </div>
+        )}
         {/* Subscription Inactive Warning */}
         {subscriptionStatus === 'inactive' && currentUser?.email !== 'elswa770@gmail.com' && (
           <div className="bg-red-50 border-b border-red-200 dark:bg-red-900/20 dark:border-red-800 px-4 py-3">
@@ -713,7 +775,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, notif
               >
                   <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
                       <h3 className="font-bold text-slate-800 dark:text-white text-sm">التنبيهات</h3>
-                      <button onClick={() => setIsNotificationsOpen(false)}>
+                      <button onClick={() => setIsNotificationsOpen(false)} title="إغلاق الإشعارات">
                         <X className="w-5 h-5 text-slate-400" />
                       </button>
                    </div>

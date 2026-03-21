@@ -39,10 +39,8 @@ export class SubscriptionService {
       const firm = await this.getCurrentFirm(firmId);
       if (!firm) return false;
       
-      // Check if firm has already used trial (either currently active or previously used)
-      return firm.hasUsedTrial === true || 
-             firm.subscriptionStatus === 'trial' || 
-             (firm.trialEndDate && new Date(firm.trialEndDate) < new Date());
+      // Check if firm has already used trial (only check hasUsedTrial flag)
+      return firm.hasUsedTrial === true;
     } catch (error) {
       console.error('❌ Error checking trial usage:', error);
       return false;

@@ -1,9 +1,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { AppUser, PermissionLevel, Case, Client, Hearing, Task, LegalReference, NotificationSettings, SMTPSettings, WhatsAppSettings, AlertPreferences, SecuritySettings, LoginAttempt, ActiveSession, DataManagementSettings, SystemHealth, SystemError, ResourceUsage, MaintenanceSettings, Role } from '../types';
+import { AppUser, PermissionLevel, SimplePermissionLevel, Case, Client, Hearing, Task, LegalReference, NotificationSettings, SMTPSettings, WhatsAppSettings, AlertPreferences, SecuritySettings, LoginAttempt, ActiveSession, DataManagementSettings, SystemHealth, SystemError, ResourceUsage, MaintenanceSettings, Role } from '../types';
 import { SubscriptionService } from '../src/services/subscriptionService';
+import { createDefaultSettingsUnified } from '../src/services/settingsService';
 import { 
   Settings as SettingsIcon, Users, Lock, Shield, 
   Plus, Edit3, Trash2, Check, X, Eye, 
@@ -58,6 +59,7 @@ const MODULES = [
   { id: 'locations', label: 'دليل المحاكم' }, // Added
   { id: 'calculators', label: 'الحاسبات القانونية' }, // Added
   { id: 'settings', label: 'الإعدادات والمستخدمين' },
+  { id: 'advanced-settings', label: 'الإعدادات المتقدمة' }, // Added - Advanced Settings
 ];
 
 const Settings: React.FC<SettingsProps> = ({ 
@@ -67,6 +69,15 @@ const Settings: React.FC<SettingsProps> = ({
   cases = [], clients = [], hearings = [], tasks = [], references = [],
   onRestoreData, readOnly = false, firmId = 'default', currentUser = null
 }) => {
+  // Helper function to check if user has access to advanced settings
+  const hasAdvancedSettingsAccess = () => {
+    if (!currentUser) return false;
+    
+    // Check if user has 'advanced-settings' permission with 'read' or 'full' access
+    const advancedSettingsPermission = currentUser.permissions?.find(p => p.moduleId === 'advanced-settings');
+    return advancedSettingsPermission && (advancedSettingsPermission.access === 'read' || advancedSettingsPermission.access === 'full');
+  };
+
   const [activeTab, setActiveTab] = useState<'general' | 'users' | 'roles' | 'security' | 'notifications' | 'data' | 'maintenance'>('general');
   const [isSaving, setIsSaving] = useState(false);
   
@@ -655,7 +666,7 @@ const Settings: React.FC<SettingsProps> = ({
   const [roleFormData, setRoleFormData] = useState<Partial<Role>>({
     name: '',
     description: '',
-    permissions: MODULES.map(m => ({ moduleId: m.id, access: 'none' as PermissionLevel }))
+    permissions: MODULES.map(m => ({ moduleId: m.id, access: 'none' as SimplePermissionLevel }))
   });
 
   const openAddRole = () => {
@@ -663,7 +674,7 @@ const Settings: React.FC<SettingsProps> = ({
     setRoleFormData({
       name: '',
       description: '',
-      permissions: MODULES.map(m => ({ moduleId: m.id, access: 'none' as PermissionLevel }))
+      permissions: MODULES.map(m => ({ moduleId: m.id, access: 'none' as SimplePermissionLevel }))
     });
     setIsRoleModalOpen(true);
   };
@@ -672,7 +683,7 @@ const Settings: React.FC<SettingsProps> = ({
     setEditingRole(role);
     const mergedPermissions = MODULES.map(m => {
       const existing = role.permissions.find(p => p.moduleId === m.id);
-      return existing || { moduleId: m.id, access: 'none' as PermissionLevel };
+      return existing || { moduleId: m.id, access: 'none' as SimplePermissionLevel };
     });
     setRoleFormData({
       ...role,
@@ -681,7 +692,7 @@ const Settings: React.FC<SettingsProps> = ({
     setIsRoleModalOpen(true);
   };
 
-  const handleRolePermissionChange = (moduleId: string, access: PermissionLevel) => {
+  const handleRolePermissionChange = (moduleId: string, access: SimplePermissionLevel) => {
     const updatedPermissions = roleFormData.permissions?.map(p => 
       p.moduleId === moduleId ? { ...p, access } : p
     );
@@ -708,10 +719,19 @@ const Settings: React.FC<SettingsProps> = ({
   
   // Initialize state from LocalStorage or Defaults
   const [generalSettings, setGeneralSettings] = useState(() => {
+    // Try to get firm-specific settings first
     const savedSettings = localStorage.getItem(`app_general_settings_${firmId}`);
     if (savedSettings) {
       return JSON.parse(savedSettings);
     }
+    
+    // If no firm-specific settings, try to get default settings
+    const defaultSettings = localStorage.getItem('app_general_settings_default');
+    if (defaultSettings) {
+      return JSON.parse(defaultSettings);
+    }
+    
+    // Final fallback to hardcoded defaults
     return {
       firmName: 'الميزان للمحاماة والاستشارات القانونية',
       firmSlogan: 'العدالة حق للجميع',
@@ -734,6 +754,13 @@ const Settings: React.FC<SettingsProps> = ({
   useEffect(() => {
     const fetchSettings = async () => {
       if (!firmId || firmId === 'default') return;
+      
+      // Ensure user is authenticated before fetching settings
+      if (!auth.currentUser) {
+        console.log('🔐 User not authenticated, waiting...');
+        return;
+      }
+      
       try {
         const docRef = doc(db, 'settings', firmId);
         const docSnap = await getDoc(docRef);
@@ -749,13 +776,32 @@ const Settings: React.FC<SettingsProps> = ({
           if (data.securitySettings) setAdvancedSecurity(JSON.parse(data.securitySettings));
           if (data.notificationSettings) setNotificationSettings(JSON.parse(data.notificationSettings));
           if (data.dataSettings) setDataSettings(JSON.parse(data.dataSettings));
+        } else {
+          // Settings don't exist - create them automatically using unified function
+          console.log('🔧 Settings not found, creating default settings...');
+          try {
+            await createDefaultSettingsUnified(firmId);
+            fetchSettings(); // Retry fetching after creating
+          } catch (settingsError: any) {
+            console.warn('⚠️ Could not create settings now, retrying with delay...');
+            // Retry after 3 seconds to allow permissions to propagate
+            setTimeout(async () => {
+              try {
+                console.log('🔄 Retrying settings creation...');
+                await createDefaultSettingsUnified(firmId);
+                fetchSettings();
+              } catch (retryError) {
+                console.warn('⚠️ Still cannot create settings, will use localStorage only');
+              }
+            }, 3000);
+          }
         }
       } catch (error) {
         console.error("Error fetching settings:", error);
       }
     };
     fetchSettings();
-  }, [firmId]);
+  }, [firmId, auth.currentUser]);
 
   useEffect(() => {
     if (onThemeChange && generalSettings.theme !== currentTheme) {
@@ -1046,8 +1092,9 @@ const Settings: React.FC<SettingsProps> = ({
                     type="checkbox" 
                     className="sr-only peer" 
                     checked={advancedSecurity.twoFactorEnabled} 
-                    onChange={e => setAdvancedSecurity({...advancedSecurity, twoFactorEnabled: e.target.checked})} 
-                   />
+                    onChange={e => setAdvancedSecurity({...advancedSecurity, twoFactorEnabled: e.target.checked})}
+                    aria-label="تفعيل المصادقة الثنائية (2FA)"
+                  />
                    <div className="w-11 h-6 bg-gray-200 dark:bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
                  </label>
               </div>
@@ -1180,7 +1227,7 @@ const Settings: React.FC<SettingsProps> = ({
     setIsUserModalOpen(true);
   };
 
-  const handlePermissionChange = (moduleId: string, access: PermissionLevel) => {
+  const handlePermissionChange = (moduleId: string, access: SimplePermissionLevel) => {
     const updatedPermissions = formData.permissions?.map(p => 
       p.moduleId === moduleId ? { ...p, access } : p
     );
@@ -1275,6 +1322,10 @@ const Settings: React.FC<SettingsProps> = ({
       }
 
       localStorage.setItem(`app_general_settings_${firmId}`, JSON.stringify(generalSettings));
+      
+      // Also save to default storage for new firms
+      localStorage.setItem('app_general_settings_default', JSON.stringify(generalSettings));
+      
       if (onThemeChange && generalSettings.theme) {
         onThemeChange(generalSettings.theme as 'light' | 'dark');
       }
@@ -1644,41 +1695,191 @@ const Settings: React.FC<SettingsProps> = ({
           {/* Contact Info Card */}
           <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
             <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-6 flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
-              <Phone className="w-5 h-5 text-indigo-600" /> بيانات التواصل
+              <Phone className="w-5 h-5 text-indigo-600" /> بيانات التواصل المتقدمة
             </h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2"><Phone className="w-3 h-3"/> الهاتف</label>
-                <input 
-                  type="text" 
-                  readOnly={readOnly}
-                  className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-left dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
-                  dir="ltr"
-                  value={generalSettings.phone}
-                  onChange={e => setGeneralSettings({...generalSettings, phone: e.target.value})}
-                />
+            
+            {/* Primary Contact */}
+            <div className="mb-6">
+              <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                <div className="w-2 h-2 bg-indigo-600 rounded-full"></div>
+                معلومات الاتصال الرئيسية
+              </h5>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2">
+                    <Phone className="w-3 h-3"/> الهاتف الرئيسي
+                  </label>
+                  <input 
+                    type="text" 
+                    readOnly={readOnly}
+                    className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-left dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
+                    dir="ltr"
+                    placeholder="+20 123 456 7890"
+                    value={generalSettings.phone}
+                    onChange={e => setGeneralSettings({...generalSettings, phone: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2">
+                    <Mail className="w-3 h-3"/> البريد الإلكتروني الرئيسي
+                  </label>
+                  <input 
+                    type="email" 
+                    readOnly={readOnly}
+                    className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-left dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
+                    dir="ltr"
+                    placeholder="office@firm.com"
+                    value={generalSettings.email}
+                    onChange={e => setGeneralSettings({...generalSettings, email: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2">
+                    <Globe className="w-3 h-3"/> الموقع الإلكتروني
+                  </label>
+                  <input 
+                    type="text" 
+                    readOnly={readOnly}
+                    className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-left dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
+                    dir="ltr"
+                    placeholder="https://www.firm.com"
+                    value={generalSettings.website}
+                    onChange={e => setGeneralSettings({...generalSettings, website: e.target.value})}
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2"><Mail className="w-3 h-3"/> البريد الإلكتروني</label>
-                <input 
-                  type="email" 
-                  readOnly={readOnly}
-                  className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-left dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
-                  dir="ltr"
-                  value={generalSettings.email}
-                  onChange={e => setGeneralSettings({...generalSettings, email: e.target.value})}
-                />
+            </div>
+
+            {/* Secondary Contact */}
+            <div className="mb-6">
+              <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
+                معلومات الاتصال البديلة
+              </h5>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2">
+                    <Smartphone className="w-3 h-3"/> الهاتف المحمول
+                  </label>
+                  <input 
+                    type="text" 
+                    readOnly={readOnly}
+                    className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-left dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
+                    dir="ltr"
+                    placeholder="+20 123 456 7890"
+                    value={generalSettings.mobilePhone || ''}
+                    onChange={e => setGeneralSettings({...generalSettings, mobilePhone: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2">
+                    <Mail className="w-3 h-3"/> البريد الإلكتروني البديل
+                  </label>
+                  <input 
+                    type="email" 
+                    readOnly={readOnly}
+                    className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-left dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
+                    dir="ltr"
+                    placeholder="support@firm.com"
+                    value={generalSettings.alternativeEmail || ''}
+                    onChange={e => setGeneralSettings({...generalSettings, alternativeEmail: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2">
+                    <Globe2 className="w-3 h-3"/> وسائل التواصل الاجتماعي
+                  </label>
+                  <input 
+                    type="text" 
+                    readOnly={readOnly}
+                    className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-left dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
+                    dir="ltr"
+                    placeholder="@firm_handle"
+                    value={generalSettings.socialMedia || ''}
+                    onChange={e => setGeneralSettings({...generalSettings, socialMedia: e.target.value})}
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2"><Globe className="w-3 h-3"/> الموقع الإلكتروني</label>
-                <input 
-                  type="text" 
-                  readOnly={readOnly}
-                  className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-left dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
-                  dir="ltr"
-                  value={generalSettings.website}
-                  onChange={e => setGeneralSettings({...generalSettings, website: e.target.value})}
-                />
+            </div>
+
+            {/* Location Information */}
+            <div className="mb-6">
+              <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+                معلومات الموقع الجغرافي
+              </h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2">
+                    <Building className="w-3 h-3"/> العنوان التفصيلي
+                  </label>
+                  <textarea 
+                    readOnly={readOnly}
+                    className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-white resize-none"
+                    rows={3}
+                    placeholder="أدخل العنوان الكامل..."
+                    value={generalSettings.address || ''}
+                    onChange={e => setGeneralSettings({...generalSettings, address: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">المدينة</label>
+                  <input 
+                    type="text" 
+                    readOnly={readOnly}
+                    className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                    placeholder="القاهرة"
+                    value={generalSettings.city || ''}
+                    onChange={e => setGeneralSettings({...generalSettings, city: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">الرمز البريدي</label>
+                  <input 
+                    type="text" 
+                    readOnly={readOnly}
+                    className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                    placeholder="12345"
+                    value={generalSettings.postalCode || ''}
+                    onChange={e => setGeneralSettings({...generalSettings, postalCode: e.target.value})}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Working Hours */}
+            <div>
+              <h5 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                <div className="w-2 h-2 bg-amber-600 rounded-full"></div>
+                ساعات العمل
+              </h5>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2">
+                    <Clock className="w-3 h-3"/> أيام العمل
+                  </label>
+                  <input 
+                    type="text" 
+                    readOnly={readOnly}
+                    className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                    placeholder="الأحد - الخميس"
+                    value={generalSettings.workDays || ''}
+                    onChange={e => setGeneralSettings({...generalSettings, workDays: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-2">
+                    <Clock className="w-3 h-3"/> مواعيد العمل
+                  </label>
+                  <input 
+                    type="text" 
+                    readOnly={readOnly}
+                    className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                    placeholder="9:00 ص - 5:00 م"
+                    value={generalSettings.workHours || ''}
+                    onChange={e => setGeneralSettings({...generalSettings, workHours: e.target.value})}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -1993,6 +2194,14 @@ const Settings: React.FC<SettingsProps> = ({
             >
               <Users className="w-4 h-4" /> المستخدمين والصلاحيات
             </button>
+            {hasAdvancedSettingsAccess() && (
+              <button 
+                onClick={() => window.location.href = '/advanced-settings'}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
+              >
+                <Shield className="w-4 h-4" /> الإعدادات المتقدمة
+              </button>
+            )}
             <button 
               onClick={() => setActiveTab('roles')}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'roles' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}

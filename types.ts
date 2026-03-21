@@ -48,6 +48,37 @@ export enum ArchiveStatus {
   BOTH = 'رقمي وفيزيائي'
 }
 
+// Employee related enums
+export enum EmployeeRole {
+  ADMIN = 'admin',
+  LAWYER = 'lawyer',
+  ASSISTANT = 'assistant',
+  ACCOUNTANT = 'accountant',
+  RECEPTIONIST = 'receptionist',
+  PARALEGAL = 'paralegal'
+}
+
+export enum EmployeeStatus {
+  ACTIVE = 'نشط',
+  INACTIVE = 'غير نشط',
+  ON_LEAVE = 'في إجازة',
+  TERMINATED = 'منتهي الخدمة'
+}
+
+export enum EmployeeDepartment {
+  LEGAL = 'قانوني',
+  ADMINISTRATION = 'إدارة',
+  ACCOUNTING = 'محاسبة',
+  RECEPTION = 'استقبال'
+}
+
+export enum PermissionLevel {
+  READ = 'read',
+  WRITE = 'write',
+  DELETE = 'delete',
+  ADMIN = 'admin'
+}
+
 export enum ArchiveRequestStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
@@ -56,14 +87,14 @@ export enum ArchiveRequestStatus {
   ARCHIVED_RETURNED = 'archived_returned'
 }
 
-export type PermissionLevel = 'none' | 'read' | 'write';
+export type SimplePermissionLevel = 'none' | 'read' | 'write';
 export type PaymentMethod = 'cash' | 'check' | 'instapay' | 'wallet' | 'bank_transfer';
 export type ReferenceType = 'law' | 'ruling' | 'encyclopedia' | 'regulation';
 export type LawBranch = 'civil' | 'criminal' | 'administrative' | 'commercial' | 'family' | 'labor' | 'other';
 
 export interface Permission {
   moduleId: string;
-  access: PermissionLevel;
+  access: SimplePermissionLevel;
 }
 
 export interface Role {
@@ -84,6 +115,7 @@ export interface SubscriptionPlan {
   maxUsers: number;
   maxCases: number;
   maxClients: number;
+  maxLawyers: number;
   maxStorageGB: number;
   isActive: boolean;
   sortOrder?: number; // New field for admin-defined ordering
@@ -96,10 +128,15 @@ export interface Firm {
   subscriptionStatus: 'active' | 'inactive' | 'trial';
   subscriptionPlan: string;
   subscriptionEndDate?: string;
+  billingCycle?: 'monthly' | 'yearly'; // Billing cycle for the subscription
   trialStartDate?: string;
   trialEndDate?: string;
   hasUsedTrial?: boolean; // Track if trial has been used before
   createdAt: string;
+  email?: string; // Firm email
+  ownerId?: string; // Owner ID
+  isActive?: boolean; // Active status
+  updatedAt?: string; // Last update timestamp
 }
 
 export interface AppUser {
@@ -115,6 +152,13 @@ export interface AppUser {
   permissions: Permission[];
   avatar?: string;
   lastLogin?: string;
+  // Subscription fields
+  subscriptionStatus?: 'active' | 'inactive' | 'trial';
+  subscriptionPlan?: string | null;
+  trialStartDate?: string;
+  trialEndDate?: string;
+  hasUsedTrial?: boolean;
+  subscriptionEndDate?: string;
 }
 
 export interface ClientDocument {
@@ -374,6 +418,7 @@ export interface ActivityLog {
   user: string;
   action: string;
   target: string;
+  details?: string; // Optional details field
   timestamp: string;
 }
 
@@ -555,10 +600,11 @@ export interface SystemError {
 }
 
 export interface ResourceUsage {
-  cpu: number; // percentage
-  memory: number; // percentage
-  storage: number; // percentage used
-  uptime: string;
+  cpu: number;
+  memory: number;
+  storage: number;
+  network: number;
+  timestamp: string;
 }
 
 export interface MaintenanceSettings {
@@ -566,4 +612,102 @@ export interface MaintenanceSettings {
   errorReporting: boolean;
   performanceMonitoring: boolean;
   maintenanceWindow: string; // e.g., "03:00"
+}
+
+// Employee interfaces
+export interface Employee {
+  id: string;
+  firmId: string;
+  personalInfo: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    nationalId: string;
+    dateOfBirth: string;
+    address: string;
+    emergencyContact: {
+      name: string;
+      phone: string;
+      relationship: string;
+    };
+  };
+  employment: {
+    employeeId: string;
+    role: EmployeeRole;
+    department: EmployeeDepartment;
+    status: EmployeeStatus;
+    hireDate: string;
+    salary: number;
+    workSchedule: {
+      days: string[];
+      hours: {
+        start: string;
+        end: string;
+      };
+    };
+  };
+  permissions: {
+    [key: string]: PermissionLevel;
+  };
+  performance: {
+    casesHandled: number;
+    revenueGenerated: number;
+    clientSatisfaction: number;
+    lastReviewDate: string;
+    nextReviewDate: string;
+  };
+  documents: {
+    cv?: string;
+    contract?: string;
+    idCard?: string;
+    qualifications?: string[];
+  };
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+export interface EmployeePerformance {
+  id: string;
+  employeeId: string;
+  period: {
+    start: string;
+    end: string;
+  };
+  metrics: {
+    casesHandled: number;
+    casesWon: number;
+    revenueGenerated: number;
+    hoursWorked: number;
+    clientSatisfaction: number;
+    teamCollaboration: number;
+    deadlineCompliance: number;
+  };
+  goals: {
+    [key: string]: {
+      target: number;
+      achieved: number;
+      percentage: number;
+    };
+  };
+  notes: string;
+  reviewer: string;
+  reviewDate: string;
+}
+
+export interface EmployeePermission {
+  id: string;
+  name: string;
+  description: string;
+  module: string;
+  level: PermissionLevel;
+}
+
+export interface EmployeeRoleData {
+  id: string;
+  name: string;
+  description: string;
+  permissions: string[];
+  isActive: boolean;
 }

@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { SimplePermissionLevel } from './types';
 import Layout from './components/Layout';
 import Onboarding from './pages/Onboarding';
 import Login from './pages/Login';
@@ -17,6 +18,7 @@ const AIAssistant = lazy(() => import('./pages/AIAssistant'));
 const CaseDetails = lazy(() => import('./pages/CaseDetails'));
 const ClientDetails = lazy(() => import('./pages/ClientDetails'));
 const Settings = lazy(() => import('./pages/Settings'));
+const AdvancedSettings = lazy(() => import('./pages/AdvancedSettings'));
 const LegalReferences = lazy(() => import('./pages/LegalReferences'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Locations = lazy(() => import('./pages/Locations'));
@@ -53,8 +55,10 @@ import {
   orderBy, 
   onSnapshot, 
   addDoc, 
-  serverTimestamp 
+  serverTimestamp,
+  limit
 } from 'firebase/firestore';
+import { logActivity } from './services/activityService';
 import { 
   signInWithPopup, 
   signOut as firebaseSignOut,
@@ -245,7 +249,15 @@ function AppContent() {
       setLawyers(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Lawyer)));
     });
 
-    const qActivities = query(collection(db, 'activities'), where('firmId', '==', firmId));
+    // For activities: show all for super admin, otherwise filter by firm and limit to 5
+    let qActivities;
+    if (currentUser?.email?.toLowerCase() === 'elswa770@gmail.com') {
+      // Super admin sees all activities (limited to 50 for performance)
+      qActivities = query(collection(db, 'activities'), orderBy('timestamp', 'desc'), limit(50));
+    } else {
+      // Regular users see only their firm's activities (limited to 5 for dashboard)
+      qActivities = query(collection(db, 'activities'), where('firmId', '==', firmId), orderBy('timestamp', 'desc'), limit(5));
+    }
     const unsubActivities = onSnapshot(qActivities, (snapshot) => {
       setActivities(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ActivityLog)));
     });
@@ -574,7 +586,7 @@ function AppContent() {
   }
 
   // --- Permission Helpers ---
-  const getPermission = (moduleId: string): 'none' | 'read' | 'write' => {
+  const getPermission = (moduleId: string): SimplePermissionLevel => {
     if (!currentUser) return 'none';
     const perm = currentUser.permissions.find(p => p.moduleId === moduleId);
     return perm ? perm.access : 'none';
@@ -635,6 +647,15 @@ function AppContent() {
     
     const docRef = doc(collection(db, 'cases'));
     await setDoc(docRef, sanitizeData({ ...newCase, id: docRef.id, firmId: currentUser.firmId }));
+    
+    // Log activity
+    await logActivity(
+      currentUser.firmId, 
+      currentUser.name || 'مستخدم', 
+      'قام بإنشاء', 
+      `قضية: ${newCase.title} - ${newCase.caseNumber}`,
+      `رقم القضية: ${newCase.caseNumber}`
+    );
   };
 
   // Separate function for updating local state only (used in offline mode)
@@ -650,15 +671,42 @@ function AppContent() {
 
   const handleUpdateCase = async (updatedCase: Case) => {
     await updateDoc(doc(db, 'cases', updatedCase.id), sanitizeData({ ...updatedCase }));
+    
+    // Log activity
+    await logActivity(
+      currentUser?.firmId || 'default', 
+      currentUser?.name || 'مستخدم', 
+      'قام بتحديث', 
+      `قضية: ${updatedCase.title} - ${updatedCase.caseNumber}`,
+      `رقم القضية: ${updatedCase.caseNumber}`
+    );
   };
 
   const handleAddHearing = async (newHearing: Hearing) => {
     const docRef = doc(collection(db, 'hearings'));
     await setDoc(docRef, sanitizeData({ ...newHearing, id: docRef.id, firmId: currentUser?.firmId || 'default' }));
+    
+    // Log activity
+    await logActivity(
+      currentUser?.firmId || 'default', 
+      currentUser?.name || 'مستخدم', 
+      'قام بإضافة', 
+      `جلسة: ${newHearing.type} - ${newHearing.date}`,
+      `نوع الجلسة: ${newHearing.type}`
+    );
   };
 
   const handleUpdateHearing = async (updatedHearing: Hearing) => {
     await updateDoc(doc(db, 'hearings', updatedHearing.id), sanitizeData({ ...updatedHearing }));
+    
+    // Log activity
+    await logActivity(
+      currentUser?.firmId || 'default', 
+      currentUser?.name || 'مستخدم', 
+      'قام بتحديث', 
+      `جلسة: ${updatedHearing.type} - ${updatedHearing.date}`,
+      `نوع الجلسة: ${updatedHearing.type}`
+    );
   };
 
   const handleAddClient = async (newClient: Client) => {
@@ -692,6 +740,15 @@ function AppContent() {
     
     await setDoc(docRef, finalData);
     console.log('✅ Client added successfully to Firebase');
+    
+    // Log activity
+    await logActivity(
+      currentUser.firmId, 
+      currentUser.name || 'مستخدم', 
+      'قام بإضافة', 
+      `موكل: ${newClient.name}`,
+      `رقم الهاتف: ${newClient.phone || 'غير محدد'}`
+    );
   };
 
   // Separate function for updating local state only (used in offline mode)
@@ -707,6 +764,15 @@ function AppContent() {
 
   const handleUpdateClient = async (updatedClient: Client) => {
     await updateDoc(doc(db, 'clients', updatedClient.id), sanitizeData({ ...updatedClient }));
+    
+    // Log activity
+    await logActivity(
+      currentUser?.firmId || 'default', 
+      currentUser?.name || 'مستخدم', 
+      'قام بتحديث', 
+      `موكل: ${updatedClient.name}`,
+      `رقم الهاتف: ${updatedClient.phone || 'غير محدد'}`
+    );
   };
 
   const handleAddLawyer = async (newLawyer: Lawyer) => {
@@ -850,15 +916,20 @@ function AppContent() {
 
     if (currentPage === 'office-admin') {
       if (!hasAccess('office-admin')) return <AccessDenied />;
-      return <OfficeAdminDashboard 
-        cases={cases} 
-        clients={clients} 
-        hearings={hearings} 
-        tasks={tasks}
-        currentUser={currentUser}
-        onUpdateHearing={handleUpdateHearing}
-        onAddHearing={handleAddHearing}
-      />;
+      return (
+        <Suspense fallback={<PageLoader />}>
+          <OfficeAdminDashboard 
+            cases={cases} 
+            clients={clients} 
+            hearings={hearings} 
+            tasks={tasks}
+            currentUser={currentUser}
+            firmId={currentUser?.firmId}
+            onUpdateHearing={handleUpdateHearing}
+            onAddHearing={handleAddHearing}
+          />
+        </Suspense>
+      );
     }
 
     if (currentPage === 'subscription' && currentFirm) {
@@ -872,6 +943,7 @@ function AppContent() {
     if (currentPage === 'case-details') moduleId = 'cases';
     if (currentPage === 'client-details') moduleId = 'clients';
     if (currentPage === 'lawyer-details') moduleId = 'lawyers';
+    if (currentPage === 'advanced-settings') moduleId = 'settings'; // Use settings permissions
     
     // Special handling for shared modules
     if (currentPage === 'fees') {
@@ -890,16 +962,19 @@ function AppContent() {
           <Suspense fallback={<PageLoader />}>
             <Dashboard 
               cases={cases} 
-              clients={clients} 
-              hearings={hearings} 
+              clients={clients}
+              hearings={hearings}
               appointments={appointments}
-              tasks={tasks} 
+              tasks={tasks}
               activities={activities}
+              currentUser={currentUser}
+              onUpdateTask={handleUpdateTask}
               onNavigate={setCurrentPage}
               onCaseClick={handleCaseClick}
-              onUpdateTask={handleUpdateTask}
               onUpdateCase={handleUpdateCase}
               onUpdateClient={handleUpdateClient}
+              onUpdateHearing={handleUpdateHearing}
+              onAddHearing={handleAddHearing}
               readOnly={isReadOnly('dashboard')}
             />
           </Suspense>
@@ -1071,6 +1146,15 @@ function AppContent() {
           onRestoreData={handleRestoreData}
           readOnly={isReadOnly('settings')}
         />;
+      case 'advanced-settings':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <AdvancedSettings 
+              firmId={currentUser?.firmId || 'default'}
+              currentUser={currentUser}
+            />
+          </Suspense>
+        );
       case 'references':
         return <LegalReferences 
           references={references}

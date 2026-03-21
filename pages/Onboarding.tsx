@@ -1,16 +1,25 @@
 import React, { useState } from 'react';
-import { Building, Briefcase, Scale, ArrowRight } from 'lucide-react';
+import { Building, Briefcase, Scale, ArrowRight, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../firebase';
+import { db, secondaryAuth, signOut, auth } from '../firebase';
 import { collection, addDoc, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { SubscriptionService } from '../src/services/subscriptionService';
-import { MOCK_ROLES } from '../services/mockData'; // We'll use this to assign initial permissions
+import { MOCK_ROLES } from '../services/mockData';
+import { createDefaultSettingsUnified } from '../src/services/settingsService';
 
 const Onboarding: React.FC = () => {
   const { firebaseUser } = useAuth();
   const [firmName, setFirmName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,9 +35,13 @@ const Onboarding: React.FC = () => {
       // 1. Create the Firm document
       const firmRef = await addDoc(collection(db, 'firms'), {
         name: firmName,
+        email: firebaseUser.email || '',        // البريد الإلكتروني من Firebase Auth
+        ownerId: firebaseUser.uid,               // معرف المالك من Firebase Auth
         subscriptionStatus: 'trial',
         subscriptionPlan: 'trial', // Changed to 'trial'
-        createdAt: new Date().toISOString()
+        isActive: true,                          // حالة نشطة
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()      // تاريخ التحديث
       });
       
       console.log('✅ Firm created with ID:', firmRef.id);
@@ -37,7 +50,7 @@ const Onboarding: React.FC = () => {
       await SubscriptionService.createTrialSubscription(firmRef.id);
       console.log('✅ Trial subscription created');
 
-      // 3. Create the User document linked to the new firm
+      // 3. Create User document linked to new firm
       // Give them the "Admin" role permissions by default
       const adminRole = MOCK_ROLES.find(r => r.name === 'مدير النظام') || MOCK_ROLES[0];
       
@@ -61,7 +74,18 @@ const Onboarding: React.FC = () => {
       await setDoc(doc(db, 'users', firebaseUser.uid), userData);
       console.log('✅ User document created successfully');
 
-      // Force a page reload to trigger the AuthContext to update
+      // 4. Create default settings with delay using unified function
+      setTimeout(async () => {
+        try {
+          await createDefaultSettingsUnified(firmRef.id, firmName);
+          console.log('✅ Default settings created successfully');
+        } catch (settingsError: any) {
+          console.warn('⚠️ Could not create settings after delay:', settingsError);
+          // Settings will be created when user first accesses settings page
+        }
+      }, 5000); // 5 seconds delay to ensure Firebase permissions are updated
+
+      // Force a page reload to trigger AuthContext to update
       console.log('🔄 Reloading page...');
       window.location.reload();
       
@@ -76,6 +100,16 @@ const Onboarding: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 relative overflow-hidden" dir="rtl">
+      {/* Logout Button */}
+      <button
+        onClick={handleLogout}
+        className="absolute top-4 left-4 z-20 flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg backdrop-blur-sm transition-all"
+        title="تسجيل الخروج"
+      >
+        <LogOut className="w-4 h-4" />
+        <span className="text-sm font-medium">تسجيل الخروج</span>
+      </button>
+
       {/* Background Decor */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0">
          <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-primary-600/20 rounded-full blur-3xl"></div>

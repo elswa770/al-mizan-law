@@ -27,7 +27,15 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser })
   const [isUploadingToDrive, setIsUploadingToDrive] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   
-  // Plan sorting state - Now uses admin-defined order only
+  // Helper function to check if a plan is unlimited
+const isUnlimited = (value: number | string | undefined) => {
+  return value === -1 || value === 'unlimited' || value === null || value === undefined;
+};
+
+// Helper function to display value or "غير محدود"
+const displayValue = (value: number | string | undefined, defaultValue: number) => {
+  return isUnlimited(value) ? 'غير محدود' : (value || defaultValue).toString();
+};
   const [planSortBy, setPlanSortBy] = useState<'name' | 'price' | 'users' | 'cases' | 'clients'>('price');
   const [planSortOrder, setPlanSortOrder] = useState<'asc' | 'desc'>('asc');
 
@@ -227,48 +235,8 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser })
         setPlans(fetchedPlans);
       } catch (error) {
         console.error('Error fetching plans:', error);
-        // Fallback to default plans if Firestore fails
-        setPlans([
-          {
-            id: 'basic',
-            name: 'الباقة الأساسية',
-            price: 500,
-            currency: 'EGP',
-            billingCycle: 'monthly',
-            features: ['إدارة 50 قضية', '3 مستخدمين', 'تخزين 5 جيجابايت', 'دعم فني عبر البريد'],
-            maxUsers: 3,
-            maxCases: 50,
-            maxClients: 100,
-            maxStorageGB: 5,
-            isActive: true
-          },
-          {
-            id: 'pro',
-            name: 'الباقة الاحترافية',
-            price: 1200,
-            currency: 'EGP',
-            billingCycle: 'monthly',
-            features: ['إدارة قضايا غير محدودة', '10 مستخدمين', 'تخزين 50 جيجابايت', 'دعم فني على مدار الساعة', 'تقارير متقدمة'],
-            maxUsers: 10,
-            maxCases: 999999,
-            maxClients: 500,
-            maxStorageGB: 50,
-            isActive: true
-          },
-          {
-            id: 'enterprise',
-            name: 'باقة الشركات',
-            price: 2500,
-            currency: 'EGP',
-            billingCycle: 'monthly',
-            features: ['كل ميزات الاحترافية', 'مستخدمين غير محدودين', 'تخزين غير محدود', 'مدير حساب مخصص', 'تخصيص النظام'],
-            maxUsers: 999999,
-            maxCases: 999999,
-            maxClients: 999999,
-            maxStorageGB: 999999,
-            isActive: true
-          }
-        ]);
+        // Fallback to empty plans if Firestore fails
+        setPlans([]);
       } finally {
         setPlansLoading(false);
       }
@@ -388,6 +356,7 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser })
         maxUsers: 1,
         maxCases: 2,
         maxClients: 1,
+        maxLawyers:1,
         maxStorageGB: 1,
         features: [
           'تجربة مجانية لمدة أسبوع',
@@ -409,6 +378,186 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser })
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in">
+      {/* Current Subscription Status */}
+      {currentFirm.subscriptionStatus === 'active' && currentFirm.subscriptionPlan !== 'trial' && (
+        <div className="p-6 rounded-xl border bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800">
+          <div className="flex items-start gap-4">
+            <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-800">
+              <CheckCircle className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-lg mb-2 text-emerald-800 dark:text-emerald-200">
+                اشتراك نشط
+              </h3>
+              <p className="text-sm text-emerald-700 dark:text-emerald-300 mb-4">
+                بيانات اشتراكك الحالي مع جميع التفاصيل والمميزات
+              </p>
+              
+              <div className="mt-4 p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                <h4 className="font-semibold text-slate-800 dark:text-white mb-4">تفاصيل الاشتراك:</h4>
+                
+                {/* Find current plan details */}
+                {(() => {
+                  console.log('Debug - Current firm subscription plan:', currentFirm.subscriptionPlan);
+                  console.log('Debug - Available plans:', plans);
+                  console.log('Debug - Current firm data:', currentFirm);
+                  
+                  // Try multiple ways to find the plan
+                  let currentPlan = plans.find(p => p.id === currentFirm.subscriptionPlan);
+                  
+                  // If not found by ID, try by name
+                  if (!currentPlan && currentFirm.subscriptionPlan) {
+                    currentPlan = plans.find(p => p.name === currentFirm.subscriptionPlan);
+                  }
+                  
+                  // If still not found, show basic info with available data
+                  if (!currentPlan) {
+                    return (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <span className="text-sm text-slate-500 dark:text-slate-400">الباقة:</span>
+                            <p className="font-semibold text-slate-800 dark:text-white">
+                              {currentFirm.subscriptionPlan}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-sm text-slate-500 dark:text-slate-400">الحالة:</span>
+                            <p className="font-semibold text-emerald-600 dark:text-emerald-400">
+                              نشط
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-sm text-slate-500 dark:text-slate-400">تاريخ الانتهاء:</span>
+                            <p className="font-semibold text-slate-800 dark:text-white">
+                              {currentFirm.subscriptionEndDate ? 
+                                new Date(currentFirm.subscriptionEndDate).toLocaleDateString('ar-EG') : 
+                                'غير محدد'
+                              }
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                          <p className="text-sm text-amber-700 dark:text-amber-300">
+                            ⚠️ لم يتم العثور على تفاصيل الباقة. يرجى تحديث الصفحة.
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  console.log('Debug - Found current plan:', currentPlan);
+                  
+                  return (
+                    <div className="space-y-4">
+                      {/* Basic Info */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-sm text-slate-500 dark:text-slate-400">الباقة:</span>
+                          <p className="font-semibold text-slate-800 dark:text-white">
+                            {currentPlan?.name || currentFirm.subscriptionPlan}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-500 dark:text-slate-400">الحالة:</span>
+                          <p className="font-semibold text-emerald-600 dark:text-emerald-400">
+                            نشط
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-500 dark:text-slate-400">تاريخ البدء:</span>
+                          <p className="font-semibold text-slate-800 dark:text-white">
+                            {currentFirm.createdAt ? 
+                              new Date(currentFirm.createdAt).toLocaleDateString('ar-EG') : 
+                              'غير محدد'
+                            }
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-sm text-slate-500 dark:text-slate-400">تاريخ الانتهاء:</span>
+                          <p className="font-semibold text-slate-800 dark:text-white">
+                            {currentFirm.subscriptionEndDate ? 
+                              new Date(currentFirm.subscriptionEndDate).toLocaleDateString('ar-EG') : 
+                              'غير محدد'
+                            }
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Usage Limits */}
+                      {currentPlan && (
+                        <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                          <h5 className="font-semibold text-slate-800 dark:text-white mb-3">حدود الباقة:</h5>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div className="text-center p-3 bg-slate-50 dark:bg-slate-700 rounded-lg">
+                              <Users className="w-5 h-5 mx-auto mb-1 text-slate-600 dark:text-slate-400" />
+                              <p className="font-semibold text-slate-800 dark:text-white">
+                                {displayValue(currentPlan.maxUsers, 3)}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">مستخدمين</p>
+                            </div>
+                            <div className="text-center p-3 bg-slate-50 dark:bg-slate-700 rounded-lg">
+                              <Briefcase className="w-5 h-5 mx-auto mb-1 text-slate-600 dark:text-slate-400" />
+                              <p className="font-semibold text-slate-800 dark:text-white">
+                                {displayValue(currentPlan.maxCases, 10)}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">قضايا</p>
+                            </div>
+                            <div className="text-center p-3 bg-slate-50 dark:bg-slate-700 rounded-lg">
+                              <Database className="w-5 h-5 mx-auto mb-1 text-slate-600 dark:text-slate-400" />
+                              <p className="font-semibold text-slate-800 dark:text-white">
+                                {displayValue(currentPlan.maxClients, 20)}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">عملاء</p>
+                            </div>
+                            <div className="text-center p-3 bg-slate-50 dark:bg-slate-700 rounded-lg">
+                              <Shield className="w-5 h-5 mx-auto mb-1 text-slate-600 dark:text-slate-400" />
+                              <p className="font-semibold text-slate-800 dark:text-white">
+                                {displayValue(currentPlan.maxLawyers, 2)}
+                              </p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">محامين</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Features */}
+                      {currentPlan?.features && currentPlan.features.length > 0 && (
+                        <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                          <h5 className="font-semibold text-slate-800 dark:text-white mb-3">المميزات:</h5>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {currentPlan.features.map((feature, index) => (
+                              <div key={index} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                {feature}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Storage */}
+                      {currentPlan?.maxStorageGB && (
+                        <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                          <h5 className="font-semibold text-slate-800 dark:text-white mb-3">مساحة التخزين:</h5>
+                          <div className="flex items-center gap-3">
+                            <Cloud className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+                            <span className="text-sm text-slate-600 dark:text-slate-400">
+                              {displayValue(currentPlan.maxStorageGB, 2)} جيجابايت
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Trial Status Alert */}
       {(currentFirm.subscriptionStatus === 'trial' || 
         (currentFirm.trialEndDate && new Date(currentFirm.trialEndDate) >= new Date())) && 
@@ -452,6 +601,32 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser })
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* No Subscription Alert - For new users without any subscription */}
+      {currentFirm.subscriptionStatus === 'inactive' && !currentFirm.subscriptionPlan && !currentFirm.trialEndDate && (
+        <div className="p-6 rounded-xl border bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
+          <div className="flex items-start gap-4">
+            <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-800">
+              <CreditCard className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-bold text-lg mb-2 text-blue-800 dark:text-blue-200">مرحباً! اختر باقتك</h3>
+              <p className="text-sm text-blue-700 dark:text-blue-300 mb-4">
+                لقد تم إنشاء مكتبك بنجاح! الآن اختر الباقة التي تناسب احتياجاتك لبدء استخدام النظام.
+              </p>
+              <div className="mt-4 p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                <h4 className="font-semibold text-slate-800 dark:text-white mb-2">الخطوات التالية:</h4>
+                <ul className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
+                  <li>• اختر الباقة التجريبية المجانية لمدة 7 أيام</li>
+                  <li>• أو اختر إحدى الباقات المدفوعة المناسبة لك</li>
+                  <li>• استمتع بجميع الميزات المتقدمة فوراً</li>
+                  <li>• احصل على دعم فني مخصص</li>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
@@ -719,6 +894,11 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser })
                       👤 {plan.maxClients === -1 ? 'غير محدود' : `حتى ${plan.maxClients} موكل`}
                     </span>
                   )}
+                  {plan.maxLawyers && (
+                    <span className="bg-gradient-to-r from-purple-100 to-indigo-100 dark:from-purple-900/30 dark:to-indigo-900/30 text-purple-700 dark:text-purple-300 text-xs px-3 py-2 rounded-full font-semibold border border-purple-200 dark:border-purple-800">
+                      ⚖️ {plan.maxLawyers === -1 ? 'غير محدود' : `حتى ${plan.maxLawyers} محامي`}
+                    </span>
+                  )}
                   {plan.maxStorageGB && (
                     <span className="bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/30 dark:to-orange-900/30 text-amber-700 dark:text-amber-300 text-xs px-3 py-2 rounded-full font-semibold border border-amber-200 dark:border-amber-800">
                       💾 {plan.maxStorageGB === -1 ? 'غير محدود' : `حتى ${plan.maxStorageGB} جيجابايت`}
@@ -785,43 +965,51 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser })
 
       {/* Payment Modal */}
       {showPaymentModal && selectedPlanForPayment && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
-            <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
-              <h3 className="font-bold text-lg">تفاصيل الدفع - {selectedPlanForPayment.name}</h3>
-              <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 hover:text-red-500">
-                <ArrowRight className="w-5 h-5 rotate-180" />
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-in zoom-in-95 border border-slate-200 dark:border-slate-700">
+            <div className="sticky top-0 bg-white dark:bg-slate-800 p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center z-10">
+              <h3 className="font-bold text-xl text-slate-800 dark:text-white">تفاصيل الدفع - {selectedPlanForPayment.name}</h3>
+              <button 
+                onClick={() => setShowPaymentModal(false)} 
+                className="text-slate-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              >
+                <X className="w-6 h-6" />
               </button>
             </div>
             
             <div className="p-6 space-y-6">
               {/* Payment Instructions */}
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-lg">
-                <div className="flex items-center gap-3 mb-3">
-                  <Phone className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                  <h4 className="font-bold text-amber-800 dark:text-amber-200">رقم التحويل</h4>
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800 p-6 rounded-xl">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="p-3 bg-amber-100 dark:bg-amber-800 rounded-full">
+                    <Phone className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-lg text-amber-800 dark:text-amber-200">رقم التحويل</h4>
+                    <p className="text-sm text-amber-600 dark:text-amber-400">قم بتحويل المبلغ إلى الرقم التالي</p>
+                  </div>
                 </div>
-                <p className="text-2xl font-bold text-center text-amber-900 dark:text-amber-100 mb-2">01090609918</p>
-                <p className="text-sm text-amber-700 dark:text-amber-300 text-center">
-                  قم بتحويل المبلغ إلى الرقم أعلاه
-                </p>
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg border border-amber-300 dark:border-amber-700">
+                  <p className="text-3xl font-bold text-center text-amber-900 dark:text-amber-100 mb-2">01090609918</p>
+                  <p className="text-sm text-amber-700 dark:text-amber-300 text-center">رقم المحفظة: Vodafone Cash</p>
+                </div>
               </div>
 
               {/* Price Details */}
-              <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg">
-                <h4 className="font-bold text-slate-800 dark:text-white mb-3">تفاصيل السعر</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
+              <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900/50 dark:to-slate-800/50 p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                <h4 className="font-bold text-lg text-slate-800 dark:text-white mb-4">تفاصيل السعر</h4>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200 dark:border-slate-700">
                     <span className="text-slate-600 dark:text-slate-300">الباقة:</span>
                     <span className="font-bold text-slate-800 dark:text-white">{selectedPlanForPayment.name}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200 dark:border-slate-700">
                     <span className="text-slate-600 dark:text-slate-300">دورة الفوترة:</span>
                     <span className="font-bold text-slate-800 dark:text-white">
                       {billingCycle === 'monthly' ? 'شهري' : 'سنوي'}
                     </span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200 dark:border-slate-700">
                     <span className="text-slate-600 dark:text-slate-300">السعر الأصلي:</span>
                     <span className="text-slate-800 dark:text-white">
                       {selectedPlanForPayment.price} {selectedPlanForPayment.currency}
@@ -830,19 +1018,19 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser })
                   </div>
                   {billingCycle === 'yearly' && (
                     <>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-center pb-2 border-b border-slate-200 dark:border-slate-700">
                         <span className="text-slate-600 dark:text-slate-300">السعر السنوي:</span>
                         <span className="text-slate-800 dark:text-white">
                           {selectedPlanForPayment.price * 12} {selectedPlanForPayment.currency}
                         </span>
                       </div>
-                      <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                      <div className="flex justify-between items-center pb-2 border-b border-slate-200 dark:border-slate-700 text-emerald-600 dark:text-emerald-400">
                         <span>الخصم (10%):</span>
                         <span className="font-bold">-{selectedPlanForPayment.price * 12 * 0.1} {selectedPlanForPayment.currency}</span>
                       </div>
                     </>
                   )}
-                  <div className="border-t pt-2 flex justify-between text-lg font-bold text-indigo-600 dark:text-indigo-400">
+                  <div className="flex justify-between items-center pt-2 text-xl font-bold text-indigo-600 dark:text-indigo-400">
                     <span>المبلغ المطلوب:</span>
                     <span>{calculatePrice(selectedPlanForPayment, billingCycle)} {selectedPlanForPayment.currency}</span>
                   </div>
@@ -850,50 +1038,64 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser })
               </div>
 
               {/* Payment Proof Upload */}
-              <form onSubmit={handlePaymentSubmit} className="space-y-4">
+              <form onSubmit={handlePaymentSubmit} className="space-y-6">
                 <div>
-                  <label className="block text-sm font-bold mb-2 flex items-center gap-2">
-                    <Camera className="w-4 h-4" />
+                  <label className="block text-lg font-bold mb-3 flex items-center gap-2 text-slate-700 dark:text-slate-300">
+                    <Camera className="w-5 h-5" />
                     إثبات التحويل
                   </label>
                   
                   {/* File Input */}
-                  <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-6">
+                  <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 bg-slate-50 dark:bg-slate-900/30 hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors">
                     <div className="text-center space-y-4">
-                      <Upload className="w-12 h-12 mx-auto text-slate-400" />
+                      <Upload className="w-16 h-16 mx-auto text-slate-400" />
                       <div>
-                        <label className="px-4 py-2 bg-slate-600 text-white rounded-lg font-bold hover:bg-slate-700 cursor-pointer flex items-center gap-2">
-                          <FileText className="w-4 h-4" />
+                        <label className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 cursor-pointer flex items-center gap-3 mx-auto inline-flex transition-colors">
+                          <FileText className="w-5 h-5" />
                           <input
                             type="file"
-                            accept="image/*"
+                            accept="image/*,.pdf"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
                                 setPaymentProof(file);
+                                const url = URL.createObjectURL(file);
+                                setPaymentProofUrl(url);
                               }
                             }}
                             className="hidden"
                           />
                           اختر ملف إثبات التحويل
                         </label>
-                        <p className="text-xs text-slate-500">
-                          يجب أن يكون صورة واضحة لإثبات التحويل
+                        <p className="text-sm text-slate-500 mt-2">
+                          يجب أن يكون صورة واضحة أو PDF لإثبات التحويل
                         </p>
                       </div>
                     </div>
                     
                     {/* File Preview */}
                     {paymentProof && (
-                      <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <FileText className="w-5 h-5 text-indigo-600" />
+                      <div className="mt-6 p-4 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center gap-4">
+                          <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+                            <FileText className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                          </div>
                           <div className="flex-1">
-                            <p className="text-sm font-bold text-slate-800 dark:text-white">{paymentProof.name}</p>
-                            <p className="text-xs text-slate-500">
+                            <p className="font-bold text-slate-800 dark:text-white">{paymentProof.name}</p>
+                            <p className="text-sm text-slate-500">
                               {(paymentProof.size / 1024 / 1024).toFixed(2)} MB
                             </p>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPaymentProof(null);
+                              setPaymentProofUrl('');
+                            }}
+                            className="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
                         </div>
                       </div>
                     )}
@@ -901,22 +1103,22 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser })
                 </div>
 
                 {/* Google Drive Toggle */}
-                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
-                      <Cloud className="w-5 h-5" />
+                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
+                      <Cloud className="w-6 h-6" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-slate-800 dark:text-white">رفع إلى Google Drive</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">سيتم حفظ الملف في سحابة جوجل</p>
+                      <p className="font-bold text-slate-800 dark:text-white">رفع إلى Google Drive</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">سيتم حفظ الملف في سحابة جوجل</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setUseGoogleDrive(!useGoogleDrive)}
-                    className={`w-12 h-6 rounded-full transition-colors relative ${useGoogleDrive ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}
+                    className={`w-14 h-7 rounded-full transition-colors relative ${useGoogleDrive ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}
                   >
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${useGoogleDrive ? 'right-1' : 'right-7'}`}></div>
+                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all ${useGoogleDrive ? 'right-1' : 'right-8'}`}></div>
                   </button>
                 </div>
 
@@ -930,34 +1132,34 @@ const Subscription: React.FC<SubscriptionProps> = ({ currentFirm, currentUser })
                         alert(err.message || 'فشل تسجيل الدخول إلى Google Drive');
                       }
                     }}
-                    className="w-full flex items-center justify-center gap-2 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                    className="w-full flex items-center justify-center gap-3 py-3 bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                   >
-                    <LogIn className="w-4 h-4" />
+                    <LogIn className="w-5 h-5" />
                     تسجيل الدخول إلى Google Drive
                   </button>
                 )}
 
-                <div className="flex gap-3 pt-4">
+                <div className="flex gap-4 pt-6 border-t border-slate-200 dark:border-slate-700">
                   <button
                     type="button"
                     onClick={() => setShowPaymentModal(false)}
-                    className="flex-1 py-2 border rounded-lg font-bold"
+                    className="flex-1 py-3 border-2 border-slate-300 dark:border-slate-600 rounded-xl font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
                   >
                     إلغاء
                   </button>
                   <button
                     type="submit"
                     disabled={submittingPayment || !paymentProof || (useGoogleDrive && !googleDriveService.isSignedIn()) || isUploadingToDrive}
-                    className="flex-1 py-2 bg-indigo-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="flex-1 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:from-indigo-700 hover:to-purple-700"
                   >
                     {submittingPayment || isUploadingToDrive ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                        <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
                         {isUploadingToDrive ? 'جاري الرفع إلى Google Drive...' : 'جاري الإرسال...'}
                       </>
                     ) : (
                       <>
-                        <Upload className="w-4 h-4" />
+                        <Upload className="w-5 h-5" />
                         إرسال الطلب
                       </>
                     )}

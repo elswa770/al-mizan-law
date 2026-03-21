@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { auth, db } from '../firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, serverTimestamp, query, collection, where, getDocs } from 'firebase/firestore';
 import { AppUser } from '../types';
+import { MOCK_ROLES } from '../services/mockData';
 
 interface AuthContextType {
   currentUser: AppUser | null;
@@ -39,21 +40,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setCurrentUser({ ...userData, id: user.uid });
           } else {
             // User exists in Auth but not in Firestore (e.g., first time login)
-            // Create user document automatically
-            const newUserDoc: AppUser = {
-              id: user.uid,
-              email: user.email || '',
-              name: user.displayName || '',
-              roleLabel: 'مدير النظام', // Default role for first-time users
-              isActive: true,
-              permissions: [], // Will be populated based on role
-              firmId: '' // Will be set when firm is created
-            };
+            // Check if user might already have a firm before creating new document
+            console.log('🔍 User document not found, checking for existing firms...');
             
-            // Create user document in Firestore
-            await setDoc(doc(db, 'users', user.uid), newUserDoc);
-            setCurrentUser(newUserDoc);
-            console.log('✅ Created user document for first-time login:', user.uid);
+            try {
+              // Check if this user owns any firms
+              const firmsQuery = query(collection(db, 'firms'), where('ownerId', '==', user.uid));
+              const firmsSnapshot = await getDocs(firmsQuery);
+              
+              if (!firmsSnapshot.empty) {
+                // User has existing firms, use the first one
+                const existingFirm = firmsSnapshot.docs[0];
+                console.log('✅ Found existing firm:', existingFirm.id);
+                
+                const newUserDoc: AppUser = {
+                  id: user.uid,
+                  email: user.email || '',
+                  name: user.displayName || '',
+                  roleLabel: 'مدير النظام',
+                  isActive: true,
+                  permissions: MOCK_ROLES.find(r => r.name === 'مدير النظام')?.permissions || [],
+                  firmId: existingFirm.id
+                };
+                
+                await setDoc(doc(db, 'users', user.uid), newUserDoc);
+                setCurrentUser(newUserDoc);
+                console.log('✅ Created user document with existing firm ID');
+              } else {
+                // No existing firms, create user document without firm
+                const newUserDoc: AppUser = {
+                  id: user.uid,
+                  email: user.email || '',
+                  name: user.displayName || '',
+                  roleLabel: 'مدير النظام',
+                  isActive: true,
+                  permissions: [], // Will be populated based on role
+                  firmId: '' // Will be set when firm is created
+                };
+                
+                await setDoc(doc(db, 'users', user.uid), newUserDoc);
+                setCurrentUser(newUserDoc);
+                console.log('✅ Created user document without firm (first time)');
+              }
+            } catch (error) {
+              console.error('❌ Error checking existing firms:', error);
+              // Fallback: create user document without firm
+              const newUserDoc: AppUser = {
+                id: user.uid,
+                email: user.email || '',
+                name: user.displayName || '',
+                roleLabel: 'مدير النظام',
+                isActive: true,
+                permissions: [],
+                firmId: ''
+              };
+              
+              await setDoc(doc(db, 'users', user.uid), newUserDoc);
+              setCurrentUser(newUserDoc);
+            }
           }
           setLoading(false);
         }, (error) => {

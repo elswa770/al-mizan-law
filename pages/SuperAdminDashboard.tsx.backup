@@ -1199,36 +1199,30 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ currentUser }
                 </div>
                 <div className="p-6 flex-1 space-y-4">
                   {/* Quick Stats */}
-                  <div className="grid grid-cols-5 gap-4 mb-6">
+                  <div className="grid grid-cols-4 gap-4 mb-6">
                     <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                      <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                         {plan.maxUsers === -1 ? 'غير محدود' : (plan.maxUsers || 0)}
                       </div>
-                      <div className="text-xs font-light text-blue-700 dark:text-blue-300">مستخدم</div>
+                      <div className="text-xs text-blue-700 dark:text-blue-300">مستخدمين</div>
                     </div>
                     <div className="text-center p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                      <div className="text-xl font-bold text-purple-600 dark:text-purple-400">
+                      <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                         {plan.maxCases === -1 ? 'غير محدود' : (plan.maxCases || 0)}
                       </div>
-                      <div className="text-xs font-light text-purple-700 dark:text-purple-300">قضية</div>
+                      <div className="text-xs text-purple-700 dark:text-purple-300">قضية</div>
                     </div>
                     <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                      <div className="text-xl font-bold text-green-600 dark:text-green-400">
+                      <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                         {plan.maxClients === -1 ? 'غير محدود' : (plan.maxClients || 0)}
                       </div>
-                      <div className="text-xs font-light text-green-700 dark:text-green-300">موكلين</div>
-                    </div>
-                    <div className="text-center p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                      <div className="text-xl font-bold text-purple-600 dark:text-purple-400">
-                        {plan.maxLawyers === -1 ? 'غير محدود' : (plan.maxLawyers || 0)}
-                      </div>
-                      <div className="text-xs font-light text-purple-700 dark:text-purple-300">محامين</div>
+                      <div className="text-xs text-green-700 dark:text-green-300">موكلين</div>
                     </div>
                     <div className="text-center p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
-                      <div className="text-xl font-bold text-amber-600 dark:text-amber-400">
+                      <div className="text-2xl font-bold text-amber-600 dark:text-amber-400">
                         {plan.maxStorageGB === -1 ? 'غير محدود' : (plan.maxStorageGB || 0)}
                       </div>
-                      <div className="text-xs font-light text-amber-700 dark:text-amber-300">جيجابايت</div>
+                      <div className="text-xs text-amber-700 dark:text-amber-300">جيجابايت</div>
                     </div>
                   </div>
 

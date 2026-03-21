@@ -1,5 +1,5 @@
 import { db, auth } from '../firebase';
-import { collection, addDoc, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
 import { ActivityLog } from '../types';
 
 enum OperationType {
@@ -53,17 +53,65 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-export const logActivity = async (firmId: string, userId: string, action: string, target: string) => {
+export const logActivity = async (firmId: string, userId: string, action: string, target: string, details?: string) => {
   try {
     await addDoc(collection(db, 'activities'), {
       firmId,
       user: userId,
       action,
       target,
+      details: details || '', // Ensure details is never undefined
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, 'activities');
+  }
+};
+
+// Get activities for a specific firm
+export const getFirmActivities = async (firmId: string, limitCount: number = 10): Promise<ActivityLog[]> => {
+  try {
+    const q = query(
+      collection(db, 'activities'), 
+      where('firmId', '==', firmId),
+      orderBy('timestamp', 'desc'), 
+      limit(limitCount)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'activities');
+    return [];
+  }
+};
+
+// Get all activities (for super admin)
+export const getAllActivities = async (limitCount: number = 50): Promise<ActivityLog[]> => {
+  try {
+    const q = query(collection(db, 'activities'), orderBy('timestamp', 'desc'), limit(limitCount));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'activities');
+    return [];
+  }
+};
+
+// Get activities for a specific user
+export const getUserActivities = async (firmId: string, userName: string, limitCount: number = 20): Promise<ActivityLog[]> => {
+  try {
+    const q = query(
+      collection(db, 'activities'), 
+      where('firmId', '==', firmId),
+      where('user', '==', userName),
+      orderBy('timestamp', 'desc'), 
+      limit(limitCount)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityLog));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'activities');
+    return [];
   }
 };
 
