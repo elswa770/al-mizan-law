@@ -115,10 +115,10 @@ const Locations: React.FC<LocationsProps> = ({ readOnly = false }) => {
   return (
     <div className="space-y-6 pb-20 animate-in fade-in">
        {/* Header */}
-       <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
+       <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
-             <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                <Map className="w-6 h-6 text-primary-600" />
+             <h2 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <Map className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600" />
                 دليل الجهات والمحاكم
              </h2>
              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
@@ -128,17 +128,17 @@ const Locations: React.FC<LocationsProps> = ({ readOnly = false }) => {
           {!readOnly && (
              <button 
                onClick={() => { setFormData({name: '', type: 'court', address: '', governorate: 'القاهرة'}); setIsModalOpen(true); }}
-               className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-colors"
+               className="bg-primary-600 hover:bg-primary-700 text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-colors w-full md:w-auto"
              >
-                <Plus className="w-4 h-4" /> إضافة مكان جديد
+                <Plus className="w-4 h-4" /> <span className="hidden sm:inline">إضافة مكان جديد</span><span className="sm:hidden">إضافة</span>
              </button>
           )}
        </div>
 
        {/* Filters */}
-       <div className="flex flex-col md:flex-row gap-4">
+       <div className="flex flex-col md:flex-row gap-3 sm:gap-4">
           <div className="flex-1 relative">
-             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+             <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 sm:w-5 sm:h-5" />
              <input 
                type="text" 
                placeholder="بحث باسم المحكمة، القسم، أو المنطقة..." 
@@ -166,20 +166,24 @@ const Locations: React.FC<LocationsProps> = ({ readOnly = false }) => {
        </div>
 
        {/* Grid */}
-       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {filteredLocations.map(loc => (
-             <div key={loc.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all group overflow-hidden flex flex-col">
-                <div className="p-5 flex-1">
-                   <div className="flex justify-between items-start mb-3">
-                      <div className="p-2 bg-slate-50 dark:bg-slate-700 rounded-lg">
-                         {getTypeIcon(loc.type)}
+             <div key={loc.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all group">
+                <div className="p-4 sm:p-5">
+                   <div className="flex justify-between items-start mb-3 sm:mb-4">
+                      <div className="flex items-center gap-2 sm:gap-3">
+                         <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center shrink-0">
+                            {getTypeIcon(loc.type)}
+                         </div>
+                         <div className="min-w-0 flex-1">
+                            <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 px-2 py-0.5 rounded font-bold">
+                               {getTypeLabel(loc.type)}
+                            </span>
+                         </div>
                       </div>
-                      <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded font-bold">
-                         {getTypeLabel(loc.type)}
-                      </span>
                    </div>
                    
-                   <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2 line-clamp-1">{loc.name}</h3>
+                   <h3 className="text-base sm:text-lg font-bold text-slate-800 dark:text-white mb-2 line-clamp-1">{loc.name}</h3>
                    
                    <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
                       <div className="flex items-start gap-2">
@@ -195,21 +199,21 @@ const Locations: React.FC<LocationsProps> = ({ readOnly = false }) => {
                    </div>
 
                    {loc.notes && (
-                      <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 rounded-lg text-xs text-amber-800 dark:text-amber-400 flex items-start gap-2">
+                      <div className="mt-3 sm:mt-4 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30 rounded-lg text-xs text-amber-800 dark:text-amber-400 flex items-start gap-2">
                          <Info className="w-4 h-4 shrink-0 mt-0.5" />
                          <p>{loc.notes}</p>
                       </div>
                    )}
                 </div>
 
-                <div className="p-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700 flex gap-2">
+                <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700 flex gap-2">
                    <a 
                      href={loc.googleMapLink || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc.name + ' ' + loc.address)}`}
                      target="_blank"
                      rel="noopener noreferrer"
                      className="flex-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors"
                    >
-                      <Navigation className="w-4 h-4 text-blue-600 dark:text-blue-400" /> الذهاب
+                      <Navigation className="w-4 h-4 text-blue-600 dark:text-blue-400" /> <span className="hidden sm:inline">الذهاب</span><span className="sm:hidden">خريطة</span>
                    </a>
                    {!readOnly && (
                       <>

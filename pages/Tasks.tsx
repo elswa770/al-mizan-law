@@ -233,28 +233,39 @@ const Tasks: React.FC<TasksProps> = ({
 
   const renderListView = () => (
     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-      <table className="w-full text-right text-sm">
-        <thead className="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-600">
-          <tr>
-            <th className="p-4">المهمة</th>
-            <th className="p-4">الأولوية</th>
-            <th className="p-4">الحالة</th>
-            <th className="p-4">الموعد</th>
-            <th className="p-4">مرتبط بـ</th>
-            <th className="p-4">المكلف</th>
-            <th className="p-4">الإجراءات</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-          {filteredTasks.map(t => (
+      <div className="overflow-x-auto -mx-4 sm:mx-0">
+        <table className="w-full text-right text-sm min-w-[600px] sm:min-w-full">
+          <thead className="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-600">
+            <tr>
+              <th className="p-2 sm:p-4 text-right">المهمة</th>
+              <th className="p-2 sm:p-4 text-right hidden sm:table-cell">الأولوية</th>
+              <th className="p-2 sm:p-4 text-right">الحالة</th>
+              <th className="p-2 sm:p-4 text-right hidden md:table-cell">الموعد</th>
+              <th className="p-2 sm:p-4 text-right hidden lg:table-cell">مرتبط بـ</th>
+              <th className="p-2 sm:p-4 text-right hidden sm:table-cell">المكلف</th>
+              <th className="p-2 sm:p-4 text-right">الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+            {filteredTasks.map(t => (
             <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-slate-800 dark:text-slate-200">
-              <td className="p-4 font-bold">{t.title}</td>
-              <td className="p-4">
+              <td className="p-2 sm:p-4 font-bold">
+                <div>
+                  <div className="truncate">{t.title}</div>
+                  <div className="flex flex-col sm:hidden text-xs text-slate-400 mt-1">
+                    <div>الأولوية: {t.priority === 'high' ? 'عاجل' : t.priority === 'medium' ? 'متوسط' : 'عادي'}</div>
+                    <div>الموعد: {t.dueDate}</div>
+                    {t.relatedCaseId && <div>القضية: {getCaseName(t.relatedCaseId)}</div>}
+                    <div>المكلف: {getUserName(t.assignedTo)}</div>
+                  </div>
+                </div>
+              </td>
+              <td className="p-2 sm:p-4 hidden sm:table-cell">
                 <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${getPriorityColor(t.priority)}`}>
                   {t.priority === 'high' ? 'عاجل' : t.priority === 'medium' ? 'متوسط' : 'عادي'}
                 </span>
               </td>
-              <td className="p-4">
+              <td className="p-2 sm:p-4">
                 <select 
                    disabled={readOnly}
                    className="text-xs bg-transparent border border-slate-200 dark:border-slate-600 rounded p-1 outline-none cursor-pointer"
@@ -266,16 +277,16 @@ const Tasks: React.FC<TasksProps> = ({
                    <option value="completed">مكتمل</option>
                  </select>
               </td>
-              <td className="p-4 font-mono text-xs">{t.dueDate}</td>
-              <td className="p-4 text-xs">
+              <td className="p-2 sm:p-4 font-mono text-xs hidden md:table-cell">{t.dueDate}</td>
+              <td className="p-2 sm:p-4 text-xs hidden lg:table-cell">
                 {t.relatedCaseId ? (
                   <button onClick={() => onCaseClick(t.relatedCaseId!)} className="text-indigo-600 hover:underline">
                     {getCaseName(t.relatedCaseId)}
                   </button>
                 ) : '-'}
               </td>
-              <td className="p-4 text-xs">{getUserName(t.assignedTo)}</td>
-              <td className="p-4">
+              <td className="p-2 sm:p-4 text-xs hidden sm:table-cell">{getUserName(t.assignedTo)}</td>
+              <td className="p-2 sm:p-4">
                 {!readOnly && (
                   <div className="flex gap-2">
                     <button onClick={() => handleOpenModal(t)} className="text-slate-400 hover:text-indigo-600"><Edit3 className="w-4 h-4"/></button>
@@ -287,6 +298,7 @@ const Tasks: React.FC<TasksProps> = ({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 

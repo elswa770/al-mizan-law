@@ -1,10 +1,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Case, Client, Hearing, CaseStatus, CaseDocument, FinancialTransaction, PaymentMethod, CaseStageType, CaseStage, Task } from '../types';
+import { Case, Client, Hearing, CaseStatus, CaseDocument, FinancialTransaction, PaymentMethod, CaseStageType, CaseStage, Task, Lawyer, BarLevelLabels } from '../types';
 import { calculateLegalDeadline } from '../utils/legalDeadlines';
 import AddHearingModal from '../components/AddHearingModal';
 import { googleDriveService } from '../src/services/googleDriveService';
-import { ArrowRight, Edit3, Calendar, FileText, Briefcase, MapPin, User, Shield, Save, X, Activity, DollarSign, Clock, CheckCircle, AlertCircle, Phone, Gavel, MoreVertical, Plus, Upload, FileCheck, Eye, Trash2, Wallet, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownLeft, Calculator, Edit, Users, GitCommit, CheckSquare, Bell, Cloud, LogIn, Wifi, WifiOff } from 'lucide-react';
+import { ArrowRight, Edit3, Calendar, FileText, Briefcase, MapPin, User, Shield, Save, X, Activity, DollarSign, Clock, CheckCircle, AlertCircle, Phone, Gavel, MoreVertical, Plus, Upload, FileCheck, Eye, Trash2, Wallet, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownLeft, Calculator, Edit, Users, GitCommit, CheckSquare, Bell, Cloud, LogIn, Wifi, WifiOff, Mail, Award } from 'lucide-react';
 import { offlineManager } from '../services/offlineManager';
 
 interface CaseDetailsProps {
@@ -12,6 +12,7 @@ interface CaseDetailsProps {
   cases: Case[];
   clients: Client[];
   hearings: Hearing[];
+  lawyers: Lawyer[];
   currentUser?: any;
   onBack: () => void;
   onAddHearing?: (hearing: Hearing) => void;
@@ -22,7 +23,7 @@ interface CaseDetailsProps {
   readOnly?: boolean;
 }
 
-const CaseDetails: React.FC<CaseDetailsProps> = ({ caseId, cases, clients, hearings, currentUser, onBack, onAddHearing, onUpdateCase, onUpdateHearing, onAddTask, onClientClick, readOnly = false }) => {
+const CaseDetails: React.FC<CaseDetailsProps> = ({ caseId, cases, clients, hearings, lawyers, currentUser, onBack, onAddHearing, onUpdateCase, onUpdateHearing, onAddTask, onClientClick, readOnly = false }) => {
   const currentCase = cases.find(c => c.id === caseId);
   const [offlineStatus, setOfflineStatus] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'hearings' | 'documents' | 'finance' | 'stages'>('overview');
@@ -474,29 +475,29 @@ const CaseDetails: React.FC<CaseDetailsProps> = ({ caseId, cases, clients, heari
   };
 
   const renderOverview = () => (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-4">
        {/* Left Column: Stats & Strategy */}
-       <div className="lg:col-span-2 space-y-6">
+       <div className="lg:col-span-2 space-y-4 sm:space-y-6">
           {/* Stats Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-             <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
-                <div className="p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
-                   <Calendar className="w-5 h-5" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+             <div className="bg-white dark:bg-slate-800 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-2 sm:gap-3">
+                <div className="p-2 sm:p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg flex-shrink-0">
+                   <Calendar className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
-                <div>
-                   <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mb-0.5">الجلسة القادمة</p>
-                   <p className="font-bold text-slate-800 dark:text-white text-sm">
+                <div className="min-w-0 flex-1">
+                   <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mb-0.5 truncate">الجلسة القادمة</p>
+                   <p className="font-bold text-slate-800 dark:text-white text-sm truncate">
                       {nextHearing && new Date(nextHearing.date) >= new Date() ? nextHearing.date : 'لا توجد جلسات قادمة'}
                    </p>
                 </div>
              </div>
              
-             <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3">
-                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg">
-                   <DollarSign className="w-5 h-5" />
+             <div className="bg-white dark:bg-slate-800 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-2 sm:gap-3">
+                <div className="p-2 sm:p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-lg flex-shrink-0">
+                   <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
-                <div>
-                   <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mb-0.5">المدفوعات</p>
+                <div className="min-w-0 flex-1">
+                   <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mb-0.5 truncate">المدفوعات</p>
                    <div className="flex items-center gap-2">
                       <p className="font-bold text-slate-800 dark:text-white text-sm">{totalPaid.toLocaleString()}</p>
                       <span className="text-[10px] text-slate-400">/ {totalAgreed.toLocaleString()}</span>
@@ -617,6 +618,57 @@ const CaseDetails: React.FC<CaseDetailsProps> = ({ caseId, cases, clients, heari
              )}
           </div>
 
+          {/* Assigned Lawyer Card */}
+          <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm relative overflow-hidden group">
+             <div className="absolute top-0 right-0 w-1 h-full bg-green-500"></div>
+             <div className="flex justify-between items-start mb-4">
+                <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                   <Users className="w-4 h-4 text-slate-400" /> المحامي المسؤول
+                </h4>
+             </div>
+             
+             {currentCase.assignedLawyerId ? (() => {
+                const assignedLawyer = lawyers.find(l => l.id === currentCase.assignedLawyerId);
+                return assignedLawyer ? (
+                   <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                         <div className="w-10 h-10 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center text-green-500 dark:text-green-400 font-bold text-lg">
+                            {assignedLawyer.name.charAt(0)}
+                         </div>
+                         <div>
+                            <p className="font-bold text-slate-800 dark:text-white">{assignedLawyer.name}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">{assignedLawyer.specialization || 'محامي'}</p>
+                         </div>
+                      </div>
+                      <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300">
+                         <div className="flex items-center gap-2">
+                            <Phone className="w-3 h-3 text-slate-400" />
+                            <span>{assignedLawyer.phone}</span>
+                         </div>
+                         {assignedLawyer.email && (
+                            <div className="flex items-center gap-2">
+                               <Mail className="w-3 h-3 text-slate-400" />
+                               <span>{assignedLawyer.email}</span>
+                            </div>
+                         )}
+                         <div className="flex items-center gap-2">
+                            <Award className="w-3 h-3 text-slate-400" />
+                            <span>{BarLevelLabels[assignedLawyer.barLevel]}</span>
+                         </div>
+                      </div>
+                   </div>
+                ) : (
+                   <div className="text-center py-4 text-slate-400 text-xs">
+                      لم يتم العثور على بيانات المحامي
+                   </div>
+                );
+             })() : (
+                <div className="text-center py-4 text-slate-400 text-xs">
+                   لم يتم تحديد محامي مسؤول عن هذه القضية
+                </div>
+             )}
+          </div>
+
           {/* Court Info */}
           <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
              <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
@@ -647,34 +699,34 @@ const CaseDetails: React.FC<CaseDetailsProps> = ({ caseId, cases, clients, heari
 
   const renderHearingsTimeline = () => (
      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 animate-in fade-in slide-in-from-bottom-4">
-        <div className="flex justify-between items-center mb-6">
-           <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Clock className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /> سجل الجلسات
+        <div className="flex justify-between items-center mb-4 sm:mb-6">
+           <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-sm sm:text-base">
+              <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 dark:text-indigo-400" /> سجل الجلسات
            </h3>
            <button 
              onClick={() => setIsAddHearingModalOpen(true)}
-             className="text-xs bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors flex items-center gap-1"
+             className="text-xs bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-2 sm:px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors flex items-center gap-1"
            >
               <Plus className="w-3 h-3" /> جلسة جديدة
            </button>
         </div>
 
-        <div className="relative border-r-2 border-slate-200 dark:border-slate-700 mr-4 space-y-8 pr-8">
+        <div className="relative border-r-2 border-slate-200 dark:border-slate-700 mr-2 sm:mr-4 space-y-6 sm:space-y-8 pr-6 sm:pr-8">
            {caseHearings.map((h, idx) => {
               const isUpcoming = new Date(h.date) >= new Date(new Date().setHours(0,0,0,0));
               return (
                  <div key={h.id} className="relative group">
-                    <div className={`absolute -right-[41px] top-0 w-5 h-5 rounded-full border-4 border-white dark:border-slate-800 ${isUpcoming ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
+                    <div className={`absolute -right-[33px] sm:-right-[41px] top-0 w-4 h-4 sm:w-5 sm:h-5 rounded-full border-4 border-white dark:border-slate-800 ${isUpcoming ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
                     
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-700/50 hover:bg-white dark:hover:bg-slate-800 hover:shadow-md transition-all">
-                       <div>
-                          <div className="flex items-center gap-3 mb-2">
-                             <span className="font-bold text-lg text-slate-800 dark:text-white font-mono">{h.date}</span>
-                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${isUpcoming ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-700/50 hover:bg-white dark:hover:bg-slate-800 hover:shadow-md transition-all">
+                       <div className="min-w-0 flex-1">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
+                             <span className="font-bold text-base sm:text-lg text-slate-800 dark:text-white font-mono truncate">{h.date}</span>
+                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex-shrink-0 ${isUpcoming ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
                                 {h.status}
                              </span>
                           </div>
-                          <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">{h.decision || h.requirements || 'لا توجد تفاصيل'}</p>
+                          <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 line-clamp-2">{h.decision || h.requirements || 'لا توجد تفاصيل'}</p>
                           {h.expenses && h.expenses.amount > 0 && (
                              <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1 mt-2">
                                 <DollarSign className="w-3 h-3" /> مصروفات: {h.expenses.amount} ج.م ({h.expenses.paidBy === 'lawyer' ? 'المكتب' : 'الموكل'})
@@ -682,9 +734,9 @@ const CaseDetails: React.FC<CaseDetailsProps> = ({ caseId, cases, clients, heari
                           )}
                        </div>
                        
-                       <div className="flex items-center gap-2 sm:flex-col sm:items-end">
+                       <div className="flex items-center gap-2 sm:flex-col sm:items-end flex-shrink-0">
                           {h.rulingUrl && (
-                             <a href={h.rulingUrl} target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline bg-white dark:bg-slate-700 px-2 py-1 rounded border border-indigo-100 dark:border-slate-600">
+                             <a href={h.rulingUrl} target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline bg-white dark:bg-slate-700 px-2 py-1 rounded border border-indigo-100 dark:border-slate-600 whitespace-nowrap">
                                 <FileText className="w-3 h-3" /> الحكم/المحضر
                              </a>
                           )}
@@ -940,7 +992,7 @@ const CaseDetails: React.FC<CaseDetailsProps> = ({ caseId, cases, clients, heari
        </div>
 
        {/* Tabs Navigation */}
-       <div className="flex p-1 bg-slate-200/50 dark:bg-slate-800/50 rounded-xl overflow-x-auto">
+       <div className="flex p-1 bg-slate-200/50 dark:bg-slate-800/50 rounded-xl overflow-x-auto gap-1">
           {[
              { id: 'overview', label: 'نظرة عامة', icon: Activity },
              { id: 'stages', label: 'مسار القضية', icon: GitCommit },
@@ -951,10 +1003,11 @@ const CaseDetails: React.FC<CaseDetailsProps> = ({ caseId, cases, clients, heari
              <button
                key={tab.id}
                onClick={() => setActiveTab(tab.id as any)}
-               className={`flex-1 min-w-[120px] py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all ${activeTab === tab.id ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:hover:bg-slate-700/50'}`}
+               className={`flex-1 min-w-[100px] sm:min-w-[120px] py-2 sm:py-2.5 px-2 rounded-lg text-xs sm:text-sm font-bold flex items-center justify-center gap-1 sm:gap-2 transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:hover:bg-slate-700/50'}`}
              >
-                <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
-                {tab.label}
+                <tab.icon className={`w-3 h-3 sm:w-4 sm:h-4 ${activeTab === tab.id ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
+                <span className="hidden xs:inline">{tab.label}</span>
+                <span className="xs:hidden">{tab.label.split(' ')[0]}</span>
              </button>
           ))}
        </div>
@@ -991,6 +1044,21 @@ const CaseDetails: React.FC<CaseDetailsProps> = ({ caseId, cases, clients, heari
                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">الدائرة</label>
                            <input type="text" value={editCaseData.circle || ''} onChange={e => setEditCaseData({...editCaseData, circle: e.target.value})} className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
                         </div>
+                    </div>
+                    <div>
+                       <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">المحامي المسؤول</label>
+                       <select 
+                          value={editCaseData.assignedLawyerId || ''} 
+                          onChange={e => setEditCaseData({...editCaseData, assignedLawyerId: e.target.value})} 
+                          className="w-full border p-2.5 rounded-lg bg-white dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                       >
+                          <option value="">-- اختر المحامي --</option>
+                          {lawyers.filter(l => l.status === 'active').map(lawyer => (
+                             <option key={lawyer.id} value={lawyer.id}>
+                                {lawyer.name} - {lawyer.specialization || 'غير محدد'}
+                             </option>
+                          ))}
+                       </select>
                     </div>
                     <div>
                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">وصف / ملاحظات</label>

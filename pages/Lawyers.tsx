@@ -110,11 +110,11 @@ const Lawyers: React.FC<LawyersProps> = ({
             className="w-full pr-10 pl-4 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full md:w-auto">
           <select 
             value={filterLevel}
             onChange={(e) => setFilterLevel(e.target.value)}
-            className="bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 focus:outline-none"
+            className="bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-300 focus:outline-none w-full md:w-auto"
           >
             <option value="all">كل الدرجات</option>
             <option value="general">جدول عام</option>
@@ -126,7 +126,7 @@ const Lawyers: React.FC<LawyersProps> = ({
       </div>
 
       {/* Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {filteredLawyers.map(lawyer => (
           <div 
             key={lawyer.id} 
@@ -135,14 +135,14 @@ const Lawyers: React.FC<LawyersProps> = ({
           >
             <div className={`absolute top-0 right-0 w-1 h-full ${lawyer.status === 'active' ? 'bg-green-500' : 'bg-slate-300'}`}></div>
             
-            <div className="p-5">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-lg">
+            <div className="p-4 sm:p-5">
+              <div className="flex justify-between items-start mb-3 sm:mb-4">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-base sm:text-lg flex-shrink-0">
                     {lawyer.name.charAt(0)}
                   </div>
-                  <div>
-                    <h3 className="font-bold text-slate-800 dark:text-white text-lg">{lawyer.name}</h3>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-bold text-slate-800 dark:text-white text-base sm:text-lg truncate">{lawyer.name}</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
                       <Award className="w-3 h-3" /> {BarLevelLabels[lawyer.barLevel]}
                     </p>

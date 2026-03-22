@@ -410,7 +410,7 @@ const Hearings: React.FC<HearingsProps> = ({ hearings, cases, onCaseClick, onUpd
   };
 
   const renderTimeline = () => (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {filteredHearings.map((hearing, idx) => {
         const caseInfo = getCaseDetails(hearing.caseId);
         if (!caseInfo) return null;
@@ -419,14 +419,14 @@ const Hearings: React.FC<HearingsProps> = ({ hearings, cases, onCaseClick, onUpd
         const isPast = hDate < today;
 
         return (
-          <div key={hearing.id} className="flex gap-4 group">
+          <div key={hearing.id} className="flex gap-2 sm:gap-4 group">
              {/* Date Column */}
-             <div className="flex flex-col items-center min-w-[60px] pt-2">
+             <div className="flex flex-col items-center min-w-[50px] sm:min-w-[60px] pt-2">
                 <span className="text-xs font-bold text-slate-400">{hDate.toLocaleDateString('ar-EG', { month: 'short' })}</span>
-                <span className={`text-2xl font-bold ${isToday ? 'text-primary-600' : isPast ? 'text-slate-600 dark:text-slate-500' : 'text-slate-800 dark:text-white'}`}>
+                <span className={`text-xl sm:text-2xl font-bold ${isToday ? 'text-primary-600' : isPast ? 'text-slate-600 dark:text-slate-500' : 'text-slate-800 dark:text-white'}`}>
                    {hDate.getDate()}
                 </span>
-                <span className="text-[10px] text-slate-400">{hDate.toLocaleDateString('ar-EG', { weekday: 'short' })}</span>
+                <span className="text-[10px] text-slate-400 hidden sm:block">{hDate.toLocaleDateString('ar-EG', { weekday: 'short' })}</span>
                 
                 {idx < filteredHearings.length - 1 && (
                    <div className="w-0.5 flex-1 bg-slate-200 dark:bg-slate-700 mt-2"></div>
@@ -446,7 +446,7 @@ const Hearings: React.FC<HearingsProps> = ({ hearings, cases, onCaseClick, onUpd
                    'bg-primary-500'
                 }`}></div>
 
-                <div className="p-4 pr-5">
+                <div className="p-3 sm:p-4 pr-4 sm:pr-5">
                    {/* Header */}
                    <div className="flex justify-between items-start mb-3">
                       <div>

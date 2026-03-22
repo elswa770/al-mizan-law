@@ -1168,6 +1168,7 @@ function AppContent() {
           cases={cases} 
           clients={clients} 
           hearings={hearings} 
+          lawyers={lawyers}
           currentUser={currentUser}
           onBack={handleBackToCases}
           onUpdateCase={handleUpdateCase}

@@ -313,37 +313,37 @@ const Settings: React.FC<SettingsProps> = ({
       </div>
 
       {/* Diagnostic Tools */}
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-        <h4 className="font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
+      <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+        <h4 className="font-bold text-slate-800 dark:text-white mb-4 sm:mb-6 flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-3">
             <Wrench className="w-5 h-5 text-slate-600" /> أدوات التشخيص والصيانة
         </h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           <button 
             onClick={handleDatabaseOptimize}
             disabled={isScanning}
-            className="p-4 border border-slate-200 dark:border-slate-600 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all text-center group disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-3 sm:p-4 border border-slate-200 dark:border-slate-600 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all text-center group disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Database className="w-8 h-8 text-slate-400 group-hover:text-indigo-600 mx-auto mb-2 transition-colors" />
-            <h5 className="font-bold text-slate-700 dark:text-slate-300">تحسين قاعدة البيانات</h5>
-            <p className="text-xs text-slate-500 mt-1">إعادة الفهرسة وتنظيف الجداول</p>
+            <Database className="w-6 h-6 sm:w-8 sm:h-8 text-slate-400 group-hover:text-indigo-600 mx-auto mb-2 transition-colors" />
+            <h5 className="font-bold text-slate-700 dark:text-slate-300 text-sm sm:text-base">تحسين قاعدة البيانات</h5>
+            <p className="text-xs text-slate-500 mt-1 hidden sm:block">إعادة الفهرسة وتنظيف الجداول</p>
           </button>
           <button 
             onClick={handleStorageCleanup}
             disabled={isScanning}
-            className="p-4 border border-slate-200 dark:border-slate-600 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all text-center group disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-3 sm:p-4 border border-slate-200 dark:border-slate-600 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all text-center group disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <HardDrive className="w-8 h-8 text-slate-400 group-hover:text-indigo-600 mx-auto mb-2 transition-colors" />
-            <h5 className="font-bold text-slate-700 dark:text-slate-300">تحرير مساحة التخزين</h5>
-            <p className="text-xs text-slate-500 mt-1">حذف الملفات المؤقتة والكاش</p>
+            <HardDrive className="w-6 h-6 sm:w-8 sm:h-8 text-slate-400 group-hover:text-indigo-600 mx-auto mb-2 transition-colors" />
+            <h5 className="font-bold text-slate-700 dark:text-slate-300 text-sm sm:text-base">تحرير مساحة التخزين</h5>
+            <p className="text-xs text-slate-500 mt-1 hidden sm:block">حذف الملفات المؤقتة والكاش</p>
           </button>
           <button 
             onClick={handleConnectivityTest}
             disabled={isScanning}
-            className="p-4 border border-slate-200 dark:border-slate-600 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all text-center group disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-3 sm:p-4 border border-slate-200 dark:border-slate-600 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all text-center group disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Terminal className="w-8 h-8 text-slate-400 group-hover:text-indigo-600 mx-auto mb-2 transition-colors" />
-            <h5 className="font-bold text-slate-700 dark:text-slate-300">اختبار الاتصال</h5>
-            <p className="text-xs text-slate-500 mt-1">Ping, DNS, API Latency</p>
+            <Terminal className="w-6 h-6 sm:w-8 sm:h-8 text-slate-400 group-hover:text-indigo-600 mx-auto mb-2 transition-colors" />
+            <h5 className="font-bold text-slate-700 dark:text-slate-300 text-sm sm:text-base">اختبار الاتصال</h5>
+            <p className="text-xs text-slate-500 mt-1 hidden sm:block">Ping, DNS, API Latency</p>
           </button>
         </div>
       </div>

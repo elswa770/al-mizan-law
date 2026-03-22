@@ -1,204 +1,71 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { PenTool, FileText, Download, Printer, User, Briefcase, ChevronDown, Check, RefreshCw, Upload, Plus } from 'lucide-react';
+import { PenTool, FileText, Download, Printer, User, Briefcase, ChevronDown, Check, RefreshCw, Upload, Plus, Sparkles, Eye, Edit3, Save, Trash2, Copy, Share2, Lock, Unlock, Zap, Clock, Star, TrendingUp, Filter, Search, X, Menu, ArrowRight, ArrowLeft, MoreVertical, Settings, HelpCircle, ChevronLeft, ChevronRight, FolderOpen, Shield, Users, Building, File } from 'lucide-react';
 import { Case, Client } from '../types';
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import mammoth from "mammoth";
+import '../styles/document-generator.css';
+import { DEFAULT_TEMPLATES, Template, MultiPageTemplate } from '../components/LegalTemplates';
+
+// Animation components
+const fadeIn = "animate-in fade-in duration-200";
+const slideUp = "animate-in slide-in-from-bottom-4 duration-300";
+const scaleIn = "animate-in zoom-in-95 duration-200";
+const shimmer = "bg-gradient-to-r from-transparent via-white/20 to-transparent bg-[length:200%_100%] animate-shimmer";
 
 interface DocumentGeneratorProps {
   cases: Case[];
   clients: Client[];
+  url: string;
 }
 
-interface Template {
-  id: string;
-  title: string;
-  type: 'contract' | 'poa' | 'notice' | 'other';
-  content: string; // Using simple placeholder syntax: {{key}}
-  placeholders: string[];
-}
-
-// Mock Templates (In a real app, these would be in a DB or external file)
-const DEFAULT_TEMPLATES: Template[] = [
-  {
-    id: 'lease_agreement',
-    title: 'عقد إيجار (سكني/تجاري)',
-    type: 'contract',
-    placeholders: ['DATE', 'CLIENT_NAME', 'CLIENT_ID', 'CLIENT_ADDRESS', 'SECOND_PARTY_NAME', 'SECOND_PARTY_ID', 'SECOND_PARTY_ADDRESS', 'UNIT_ADDRESS', 'UNIT_DETAILS', 'RENT_AMOUNT', 'SECURITY_DEPOSIT', 'START_DATE', 'DURATION', 'PURPOSE'],
-    content: `
-      <h2 style="text-align: center; margin-bottom: 20px; text-decoration: underline;">عقد إيجار أملاك</h2>
-      <p>إنه في يوم الموافق: <strong>{{DATE}}</strong></p>
-      <p>تحرر هذا العقد بين كل من:</p>
-      <p><strong>أولاً: السيد/ {{CLIENT_NAME}}</strong> المقيم في: {{CLIENT_ADDRESS}} ويحمل رقم قومي: {{CLIENT_ID}} (طرف أول - مؤجر)</p>
-      <p><strong>ثانياً: السيد/ {{SECOND_PARTY_NAME}}</strong> المقيم في: {{SECOND_PARTY_ADDRESS}} ويحمل رقم قومي: {{SECOND_PARTY_ID}} (طرف ثاني - مستأجر)</p>
-      <br/>
-      <h3 style="text-align: center;">التمهيد</h3>
-      <p>يقر الطرفان بأهليتهما للتعاقد والتصرف، وقد اتفقا على ما يلي:</p>
-      <p><strong>البند الأول:</strong> أجر الطرف الأول للطرف الثاني الشقة/الوحدة الكائنة في: {{UNIT_ADDRESS}} والمكونة من: {{UNIT_DETAILS}} بقصد استعمالها ({{PURPOSE}}).</p>
-      <p><strong>البند الثاني:</strong> مدة هذا العقد هي <strong>{{DURATION}}</strong> تبدأ من تاريخ {{START_DATE}} وتنتهي في تاريخ ....................... ولا يجدد هذا العقد إلا بعقد جديد واتفاق جديد.</p>
-      <p><strong>البند الثالث:</strong> القيمة الإيجارية الشهرية هي <strong>{{RENT_AMOUNT}} جنيه مصري</strong> تدفع مقدماً أول كل شهر للطرف الأول، وفي حالة التأخير عن الدفع لمدة ............ يعتبر العقد مفسوخاً من تلقاء نفسه دون حاجة إلى تنبيه أو إنذار.</p>
-      <p><strong>البند الرابع:</strong> دفع الطرف الثاني للطرف الأول مبلغ وقدره <strong>{{SECURITY_DEPOSIT}} جنيه مصري</strong> كتأمين، يرد عند انتهاء العقد وتسليم العين بالحالة التي كانت عليها وقت التعاقد.</p>
-      <p><strong>البند الخامس:</strong> يقر الطرف الثاني بأنه عاين العين المؤجرة المعاينة التامة النافية للجهالة وقبلها بحالتها الحالية، ويتعهد بالمحافظة عليها وصيانتها.</p>
-      <p><strong>البند السادس:</strong> لا يجوز للمستأجر تأجير العين من الباطن أو التنازل عنها للغير دون موافقة كتابية من المؤجر.</p>
-      <p><strong>البند السابع:</strong> تختص محكمة ............ بالنظر في أي نزاع ينشأ عن هذا العقد.</p>
-      <p><strong>البند الثامن:</strong> تحرر هذا العقد من نسختين، بيد كل طرف نسخة للعمل بموجبها.</p>
-      <br/><br/>
-      <div style="display: flex; justify-content: space-between; margin-top: 50px;">
-        <div style="text-align: center;"><strong>الطرف الأول (المؤجر)</strong><br/><br/>...................</div>
-        <div style="text-align: center;"><strong>الطرف الثاني (المستأجر)</strong><br/><br/>...................</div>
-      </div>
-    `
-  },
-  {
-    id: 'employment_contract',
-    title: 'عقد عمل (محدد المدة)',
-    type: 'contract',
-    placeholders: ['DATE', 'EMPLOYER_NAME', 'EMPLOYER_ADDRESS', 'EMPLOYEE_NAME', 'EMPLOYEE_ID', 'EMPLOYEE_ADDRESS', 'JOB_TITLE', 'SALARY', 'START_DATE', 'CONTRACT_DURATION', 'PROBATION_PERIOD'],
-    content: `
-      <h2 style="text-align: center; margin-bottom: 20px; text-decoration: underline;">عقد عمل محدد المدة</h2>
-      <p>إنه في يوم الموافق: <strong>{{DATE}}</strong></p>
-      <p>تحرر هذا العقد بين كل من:</p>
-      <p><strong>أولاً: شركة/السيد: {{EMPLOYER_NAME}}</strong> ومقرها: {{EMPLOYER_ADDRESS}} (طرف أول - صاحب العمل)</p>
-      <p><strong>ثانياً: السيد/ {{EMPLOYEE_NAME}}</strong> المقيم في: {{EMPLOYEE_ADDRESS}} ويحمل رقم قومي: {{EMPLOYEE_ID}} (طرف ثاني - عامل)</p>
-      <br/>
-      <h3 style="text-align: center;">بنود العقد</h3>
-      <p><strong>البند الأول:</strong> يعين الطرف الأول الطرف الثاني للعمل لديه في وظيفة <strong>{{JOB_TITLE}}</strong>، ويتعهد الطرف الثاني بأداء واجبات وظيفته بأمانة وإخلاص.</p>
-      <p><strong>البند الثاني:</strong> مدة هذا العقد هي <strong>{{CONTRACT_DURATION}}</strong> تبدأ من تاريخ {{START_DATE}} وتنتهي في .......................، ويجوز تجديدها باتفاق الطرفين.</p>
-      <p><strong>البند الثالث:</strong> يخضع الطرف الثاني لفترة اختبار مدتها <strong>{{PROBATION_PERIOD}}</strong>، ويجوز للطرف الأول إنهاء العقد خلال هذه الفترة دون إنذار أو تعويض إذا ثبت عدم صلاحية الطرف الثاني للعمل.</p>
-      <p><strong>البند الرابع:</strong> يتقاضى الطرف الثاني راتباً شهرياً شاملاً قدره <strong>{{SALARY}} جنيه مصري</strong>، يصرف في نهاية كل شهر.</p>
-      <p><strong>البند الخامس:</strong> يلتزم الطرف الثاني بمواعيد العمل الرسمية المحددة من قبل الشركة، وكذلك بتنفيذ تعليمات الرؤساء والمحافظة على أسرار العمل.</p>
-      <p><strong>البند السادس:</strong> يستحق الطرف الثاني إجازة سنوية مدفوعة الأجر مدتها 21 يوماً بعد مرور سنة كاملة في الخدمة، وتزداد إلى 30 يوماً بعد مرور 10 سنوات أو تجاوز سن الخمسين.</p>
-      <p><strong>البند السابع:</strong> تختص المحكمة العمالية بنظر أي نزاع ينشأ عن هذا العقد.</p>
-      <p><strong>البند الثامن:</strong> تحرر هذا العقد من ثلاث نسخ، بيد كل طرف نسخة وأودعت النسخة الثالثة بمكتب التأمينات الاجتماعية المختص.</p>
-      <br/><br/>
-      <div style="display: flex; justify-content: space-between; margin-top: 50px;">
-        <div style="text-align: center;"><strong>الطرف الأول (صاحب العمل)</strong><br/><br/>...................</div>
-        <div style="text-align: center;"><strong>الطرف الثاني (العامل)</strong><br/><br/>...................</div>
-      </div>
-    `
-  },
-  {
-    id: 'apartment_sale_contract',
-    title: 'عقد بيع شقة سكنية (نهائي)',
-    type: 'contract',
-    placeholders: ['DATE', 'SELLER_NAME', 'SELLER_ID', 'SELLER_ADDRESS', 'BUYER_NAME', 'BUYER_ID', 'BUYER_ADDRESS', 'APARTMENT_ADDRESS', 'APARTMENT_AREA', 'FLOOR_NUMBER', 'TOTAL_PRICE', 'PAID_AMOUNT', 'REMAINING_AMOUNT'],
-    content: `
-      <h2 style="text-align: center; margin-bottom: 20px; text-decoration: underline;">عقد بيع شقة سكنية</h2>
-      <p>إنه في يوم الموافق: <strong>{{DATE}}</strong></p>
-      <p>تحرر هذا العقد بين كل من:</p>
-      <p><strong>أولاً: السيد/ {{SELLER_NAME}}</strong> المقيم في: {{SELLER_ADDRESS}} ويحمل رقم قومي: {{SELLER_ID}} (طرف أول - بائع)</p>
-      <p><strong>ثانياً: السيد/ {{BUYER_NAME}}</strong> المقيم في: {{BUYER_ADDRESS}} ويحمل رقم قومي: {{BUYER_ID}} (طرف ثاني - مشتري)</p>
-      <br/>
-      <h3 style="text-align: center;">التمهيد</h3>
-      <p>يمتلك الطرف الأول الشقة السكنية الكائنة في: {{APARTMENT_ADDRESS}} بالدور {{FLOOR_NUMBER}} والبالغ مساحتها {{APARTMENT_AREA}} متر مربع تقريباً، ورغب الطرف الأول في بيعها للطرف الثاني الذي قبل شراءها وفقاً للبنود التالية:</p>
-      <p><strong>البند الأول:</strong> يعتبر التمهيد السابق جزءاً لا يتجزأ من هذا العقد.</p>
-      <p><strong>البند الثاني:</strong> باع وأسقط وتنازل الطرف الأول بكافة الضمانات الفعلية والقانونية للطرف الثاني القابل لذلك الشقة الموضحة بالتمهيد.</p>
-      <p><strong>البند الثالث:</strong> تم هذا البيع نظير ثمن إجمالي قدره <strong>{{TOTAL_PRICE}} جنيه مصري</strong>.</p>
-      <p><strong>البند الرابع:</strong> دفع الطرف الثاني للطرف الأول مبلغ وقدره <strong>{{PAID_AMOUNT}} جنيه مصري</strong> عند التوقيع على هذا العقد، والباقي وقدره <strong>{{REMAINING_AMOUNT}} جنيه مصري</strong> يسدد على النحو التالي: ........................................................</p>
-      <p><strong>البند الخامس:</strong> يقر الطرف الثاني بأنه عاين الشقة المبيعة المعاينة التامة النافية للجهالة وقبلها بحالتها الراهنة.</p>
-      <p><strong>البند السادس:</strong> يلتزم الطرف الأول بتسليم الشقة للطرف الثاني خالية من الأشخاص والشواغل في موعد أقصاه .......................، كما يلتزم بتقديم كافة المستندات اللازمة لنقل الملكية وتسجيل العقد.</p>
-      <p><strong>البند السابع:</strong> يقر الطرف الأول بخلو الشقة من كافة الحقوق العينية الأصلية والتبعية كالرهن والاختصاص والامتياز، وأنها ليست موقوفة ولا محكورة.</p>
-      <p><strong>البند الثامن:</strong> تختص محكمة ............ بنظر أي نزاع ينشأ حول تنفيذ أو تفسير بنود هذا العقد.</p>
-      <br/><br/>
-      <div style="display: flex; justify-content: space-between; margin-top: 50px;">
-        <div style="text-align: center;"><strong>الطرف الأول (البائع)</strong><br/><br/>...................</div>
-        <div style="text-align: center;"><strong>الطرف الثاني (المشتري)</strong><br/><br/>...................</div>
-      </div>
-    `
-  },
-  {
-    id: 'car_sale_contract',
-    title: 'عقد بيع سيارة',
-    type: 'contract',
-    placeholders: ['DATE', 'SELLER_NAME', 'SELLER_ID', 'SELLER_ADDRESS', 'BUYER_NAME', 'BUYER_ID', 'BUYER_ADDRESS', 'CAR_MAKE', 'CAR_MODEL', 'CAR_YEAR', 'CAR_PLATE', 'CAR_CHASSIS', 'CAR_MOTOR', 'CAR_COLOR', 'PRICE'],
-    content: `
-      <h2 style="text-align: center; margin-bottom: 20px; text-decoration: underline;">عقد بيع سيارة</h2>
-      <p>إنه في يوم الموافق: <strong>{{DATE}}</strong></p>
-      <p>تحرر هذا العقد بين كل من:</p>
-      <p><strong>أولاً: السيد/ {{SELLER_NAME}}</strong> المقيم في: {{SELLER_ADDRESS}} ويحمل رقم قومي: {{SELLER_ID}} (طرف أول - بائع)</p>
-      <p><strong>ثانياً: السيد/ {{BUYER_NAME}}</strong> المقيم في: {{BUYER_ADDRESS}} ويحمل رقم قومي: {{BUYER_ID}} (طرف ثاني - مشتري)</p>
-      <br/>
-      <h3 style="text-align: center;">البنود</h3>
-      <p><strong>البند الأول:</strong> باع الطرف الأول للطرف الثاني السيارة رقم ({{CAR_PLATE}}) ماركة ({{CAR_MAKE}}) موديل ({{CAR_MODEL}}) سنة الصنع ({{CAR_YEAR}}) شاسيه رقم ({{CAR_CHASSIS}}) موتور رقم ({{CAR_MOTOR}}) لون ({{CAR_COLOR}}).</p>
-      <p><strong>البند الثاني:</strong> تم هذا البيع نظير ثمن إجمالي قدره <strong>{{PRICE}} جنيه مصري</strong>، دفعه الطرف الثاني للطرف الأول عداً ونقداً بمجلس العقد، ويعتبر توقيع الطرف الأول على هذا العقد بمثابة مخالصة تامة بالثمن.</p>
-      <p><strong>البند الثالث:</strong> يقر الطرف الثاني بأنه عاين السيارة المبيعة المعاينة التامة النافية للجهالة وقبلها بحالتها الراهنة (كما هي) وتحت مسؤوليته.</p>
-      <p><strong>البند الرابع:</strong> يقر الطرف الأول بأن السيارة المبيعة ملك خالص له، وأنه لا يوجد عليها أي حظر بيع أو أقساط أو مستحقات للغير أو للجمارك أو للضرائب حتى تاريخ تحرير هذا العقد.</p>
-      <p><strong>البند الخامس:</strong> يلتزم الطرف الأول بعمل توكيل رسمي بالبيع للنفس والغير للطرف الثاني أو الحضور أمام الشهر العقاري لنقل الملكية خلال مدة أقصاه ............ يوم من تاريخه.</p>
-      <p><strong>البند السادس:</strong> يتحمل الطرف الثاني كافة المخالفات المرورية والرسوم والضرائب المتعلقة بالسيارة اعتباراً من تاريخ وساعة استلام السيارة وتحرير هذا العقد.</p>
-      <p><strong>البند السابع:</strong> تحرر هذا العقد من نسختين، بيد كل طرف نسخة للعمل بموجبها.</p>
-      <br/><br/>
-      <div style="display: flex; justify-content: space-between; margin-top: 50px;">
-        <div style="text-align: center;"><strong>الطرف الأول (البائع)</strong><br/><br/>...................</div>
-        <div style="text-align: center;"><strong>الطرف الثاني (المشتري)</strong><br/><br/>...................</div>
-      </div>
-    `
-  },
-  {
-    id: 'general_poa',
-    title: 'توكيل رسمي عام قضايا',
-    type: 'poa',
-    placeholders: ['CLIENT_NAME', 'CLIENT_ID', 'CLIENT_ADDRESS', 'LAWYER_NAME'],
-    content: `
-      <h2 style="text-align: center; margin-bottom: 20px;">توكيل رسمي عام في القضايا</h2>
-      <p>أقر أنا الموقع أدناه:</p>
-      <p>الاسم: <strong>{{CLIENT_NAME}}</strong></p>
-      <p>الجنسية: مصري - الديانة: مسلم</p>
-      <p>الثابت الشخصية بموجب رقم قومي: <strong>{{CLIENT_ID}}</strong></p>
-      <p>المقيم في: {{CLIENT_ADDRESS}}</p>
-      <br/>
-      <p>أنني قد وكلت الأستاذ/ <strong>{{LAWYER_NAME}}</strong> المحامي.</p>
-      <br/>
-      <p>في الحضور والمرافعة عني أمام جميع المحاكم بجميع أنواعها ودرجاتها (الجزئية والابتدائية والاستئناف والنقض) ومحاكم القضاء الإداري ومجلس الدولة، وفي تقديم المذكرات والطعون واستلام الأحكام وتنفيذها.</p>
-      <p>كما وكلته في الصلح والإقرار والإنكار والإبراء والتحكيم والطعن بالتزوير، وفي استلام الأوراق والمستندات، وفي التوقيع نيابة عني على كافة الأوراق اللازمة لذلك.</p>
-      <br/><br/>
-      <p style="text-align: left;">توقيع الموكل: .......................</p>
-    `
-  },
-  {
-    id: 'warning_notice',
-    title: 'إنذار على يد محضر',
-    type: 'notice',
-    placeholders: ['DATE', 'CLIENT_NAME', 'LAWYER_NAME', 'OPPONENT_NAME', 'OPPONENT_ADDRESS', 'AMOUNT', 'REASON', 'DEADLINE_DAYS'],
-    content: `
-      <h2 style="text-align: center; margin-bottom: 20px;">إنذار على يد محضر</h2>
-      <p>إنه في يوم الموافق: <strong>{{DATE}}</strong></p>
-      <p>بناءً على طلب السيد/ <strong>{{CLIENT_NAME}}</strong></p>
-      <p>ومحله المختار مكتب الأستاذ/ <strong>{{LAWYER_NAME}}</strong> المحامي.</p>
-      <br/>
-      <p>أنا ............ محضر محكمة ............ قد انتقلت وأعلنت:</p>
-      <p>السيد/ <strong>{{OPPONENT_NAME}}</strong> المقيم في: {{OPPONENT_ADDRESS}}</p>
-      <br/>
-      <h3 style="text-align: center;">الموضوع</h3>
-      <p>ينذر الطالب المعلن إليه بضرورة سداد مبلغ وقدره <strong>{{AMOUNT}}</strong> وذلك قيمة {{REASON}}.</p>
-      <p>حيث أن الطالب قد طالب المعلن إليه مراراً وتكراراً بالطرق الودية إلا أنه امتنع دون وجه حق.</p>
-      <p>لذا، ينبه الطالب على المعلن إليه بضرورة السداد خلال <strong>({{DEADLINE_DAYS}}) يوماً</strong> من تاريخ استلام هذا الإنذار، وإلا سيضطر الطالب لاتخاذ كافة الإجراءات القانونية القبلية والمدنية والجنائية ضده، مع تحميله كافة المصروفات والأتعاب.</p>
-      <br/>
-      <h3 style="text-align: center;">بناءً عليه</h3>
-      <p>أنا المحضر سالف الذكر قد انتقلت وسلمت صورة من هذا الإنذار للمعلن إليه للعلم بما جاء به ونفاذ مفعوله في مواجهته.</p>
-      <p>ولأجل العلم....</p>
-    `
-  }
-];
-
-const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({ cases, clients }) => {
-  // State for Custom Templates (Imported)
+const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({ cases, clients, url }) => {
+  // Enhanced State Management
   const [customTemplates, setCustomTemplates] = useState<Template[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(DEFAULT_TEMPLATES[0].id);
   const [selectedContext, setSelectedContext] = useState<{type: 'client' | 'case', id: string} | null>(null);
-  
-  // Combine Default and Custom Templates
-  const allTemplates = useMemo(() => [...DEFAULT_TEMPLATES, ...customTemplates], [customTemplates]);
-
-  // Dynamic Form Data
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [previewContent, setPreviewContent] = useState('');
+  const [currentPage, setCurrentPage] = useState<number>(1); // For multi-page templates
+  const [savedPages, setSavedPages] = useState<Record<string, string>>({}); // Saved pages data
   
+  // UI State
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  
+  // Refs
   const printRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Handlers ---
+  // Combine Default and Custom Templates
+  const allTemplates = useMemo(() => [...DEFAULT_TEMPLATES, ...customTemplates], [customTemplates]);
+  
+  // Filter templates based on search and category
+  const filteredTemplates = useMemo(() => {
+    return allTemplates.filter(template => {
+      const matchesSearch = template.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           template.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+      const matchesCategory = activeCategory === 'all' || template.category === activeCategory;
+      return matchesSearch && matchesCategory;
+    });
+  }, [allTemplates, searchTerm, activeCategory]);
+  
+  // Template categories
+  const categories = [
+    { id: 'all', label: 'الكل', icon: FolderOpen, color: 'bg-slate-500' },
+    { id: 'civil', label: 'مدني', icon: FileText, color: 'bg-blue-500' },
+    { id: 'criminal', label: 'جنائي', icon: Shield, color: 'bg-red-500' },
+    { id: 'family', label: 'أسري', icon: Users, color: 'bg-pink-500' },
+    { id: 'commercial', label: 'تجاري', icon: Briefcase, color: 'bg-green-500' },
+    { id: 'administrative', label: 'إداري', icon: Building, color: 'bg-purple-500' },
+    { id: 'general', label: 'عام', icon: File, color: 'bg-orange-500' }
+  ];
 
-  // 1. Auto-Fill Logic
+  // --- Handlers ---
   useEffect(() => {
     const template = allTemplates.find(t => t.id === selectedTemplateId);
     if (!template) return;
@@ -282,18 +149,44 @@ const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({ cases, clients })
       // Clean up placeholders (remove brackets and duplicates)
       const placeholders: string[] = Array.from(new Set(matches.map((m: string) => m.replace(/{{|}}/g, '').trim())));
 
+      // Check if this might be a multi-page template (has page breaks or multiple page indicators)
+      const hasPageBreaks = html.includes('صفحة') || html.includes('Page') || placeholders.length > 15;
+
       const newTemplate: Template = {
         id: `custom_${Date.now()}`,
         title: file.name.replace('.docx', ''),
         type: 'other',
         content: html,
-        placeholders: placeholders
+        placeholders: placeholders,
+        category: 'general',
+        difficulty: 'intermediate',
+        tags: hasPageBreaks ? ['مخصص', 'متعدد الصفحات'] : ['مخصص'],
+        usageCount: 0,
+        lastUpdated: new Date().toISOString().split('T')[0],
+        ...(hasPageBreaks && {
+          isMultiPage: true,
+          pages: [
+            {
+              id: 'page_1',
+              title: 'صفحة 1',
+              pageNumber: 1,
+              content: html,
+              placeholders: placeholders
+            }
+          ]
+        })
       };
 
       setCustomTemplates(prev => [...prev, newTemplate]);
       setSelectedTemplateId(newTemplate.id);
-      alert('تم استيراد النموذج بنجاح! يمكنك الآن ملء البيانات.');
-
+      setFormData({});
+      
+      // If it's a multi-page template, set to page 1
+      if (hasPageBreaks) {
+        setCurrentPage(1);
+      }
+      
+      alert(`تم استيراد النموذج بنجاح!`);
     } catch (error) {
       console.error("Error importing docx:", error);
       alert('حدث خطأ أثناء قراءة ملف Word. تأكد أنه ملف .docx صالح.');
@@ -362,160 +255,406 @@ const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({ cases, clients })
        type: 'application/msword'
      });
      
-     const url = URL.createObjectURL(blob);
      const link = document.createElement('a');
-     link.href = url;
+     link.href = URL.createObjectURL(blob);
      link.download = `${currentTemplate?.title || 'document'}.doc`;
      document.body.appendChild(link);
      link.click();
      document.body.removeChild(link);
-     URL.revokeObjectURL(url);
+     URL.revokeObjectURL(link.href);
   };
 
   const currentTemplate = allTemplates.find(t => t.id === selectedTemplateId);
+  
+  // Get current page content for multi-page templates
+  const getCurrentPageContent = () => {
+    if (!currentTemplate) return '';
+    
+    if (currentTemplate.isMultiPage && currentTemplate.pages) {
+      const page = currentTemplate.pages.find(p => p.pageNumber === currentPage);
+      return page ? page.content : currentTemplate.pages[0]?.content || '';
+    }
+    
+    return currentTemplate.content;
+  };
+  
+  // Get current page placeholders
+  const getCurrentPagePlaceholders = () => {
+    if (!currentTemplate) return [];
+    
+    if (currentTemplate.isMultiPage && currentTemplate.pages) {
+      const page = currentTemplate.pages.find(p => p.pageNumber === currentPage);
+      return page ? page.placeholders : currentTemplate.pages[0]?.placeholders || [];
+    }
+    
+    return currentTemplate.placeholders;
+  };
+  
+  // Save current page data
+  const saveCurrentPage = () => {
+    if (!currentTemplate) return;
+    
+    const pageKey = `${selectedTemplateId}_page_${currentPage}`;
+    setSavedPages(prev => ({
+      ...prev,
+      [pageKey]: JSON.stringify(formData)
+    }));
+    
+    // Show success message
+    alert(`تم حفظ الصفحة ${currentPage} بنجاح!`);
+  };
+  
+  // Load saved page data
+  const loadSavedPage = (pageNumber: number) => {
+    if (!currentTemplate) return;
+    
+    const pageKey = `${selectedTemplateId}_page_${pageNumber}`;
+    const savedData = savedPages[pageKey];
+    
+    if (savedData) {
+      try {
+        const parsedData = JSON.parse(savedData);
+        setFormData(parsedData);
+        setCurrentPage(pageNumber);
+      } catch (error) {
+        console.error('Error loading saved page:', error);
+      }
+    } else {
+      setCurrentPage(pageNumber);
+    }
+  };
+  
+  // Import multi-page template
+  const handleImportMultiPage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      // Convert Word to HTML
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      const html = result.value;
+
+      // Extract placeholders {{KEY}}
+      const matches: string[] = html.match(/{{(.*?)}}/g) || [];
+      // Clean up placeholders (remove brackets and duplicates)
+      const placeholders: string[] = Array.from(new Set(matches.map((m: string) => m.replace(/{{|}}/g, '').trim())));
+
+      const newTemplate: Template = {
+        id: `custom_multipage_${Date.now()}`,
+        title: file.name.replace('.docx', ''),
+        type: 'other',
+        content: '',
+        placeholders: placeholders,
+        category: 'general',
+        difficulty: 'intermediate',
+        tags: ['مخصص', 'متعدد الصفحات'],
+        usageCount: 0,
+        lastUpdated: new Date().toISOString().split('T')[0],
+        isMultiPage: true,
+        pages: [
+          {
+            id: 'page_1',
+            title: 'صفحة 1',
+            pageNumber: 1,
+            content: html,
+            placeholders: placeholders
+          }
+        ]
+      };
+
+      setCustomTemplates(prev => [...prev, newTemplate]);
+      setSelectedTemplateId(newTemplate.id);
+      setCurrentPage(1);
+      setFormData({});
+      alert('تم استيراد النموذج متعدد الصفحات بنجاح!');
+    } catch (error) {
+      console.error('Error importing multi-page template:', error);
+      alert('حدث خطأ أثناء استيراد النموذج');
+    }
+  };
 
   return (
-    <div className="space-y-6 pb-20 animate-in fade-in h-[calc(100vh-140px)] flex flex-col">
-       
-       {/* 1. Header */}
-       <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4 shrink-0">
-          <div>
-             <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                <PenTool className="w-6 h-6 text-primary-600" />
-                إدارة العقود والمحررات
-             </h2>
-             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                صياغة قانونية آلية دقيقة وسريعة
-             </p>
-          </div>
-          
-          <div className="flex gap-2">
-             <button onClick={handleDownloadWord} className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors">
-                <FileText className="w-4 h-4 text-blue-600" /> Word
-             </button>
-             <button onClick={handleDownloadPDF} className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors">
-                <Download className="w-4 h-4" /> PDF
-             </button>
-             <button onClick={handlePrint} className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-primary-700 transition-colors shadow-sm">
-                <Printer className="w-4 h-4" /> طباعة
-             </button>
-          </div>
-       </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 pt-24 lg:pt-0">
+      {/* Mobile Header */}
+      <div className="lg:hidden bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 mt-8">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="p-3 rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors shadow-md"
+            aria-label="فتح القائمة الجانبية"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <h1 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+            <PenTool className="w-5 h-5 text-primary-600" />
+            إدارة العقود
+          </h1>
+          <button
+            onClick={() => setIsPreviewMode(!isPreviewMode)}
+            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+            aria-label="تبديل وضع المعاينة"
+          >
+            <Eye className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
 
-       {/* 2. Controls Bar */}
-       <div className="bg-slate-100 dark:bg-slate-700/50 p-4 rounded-xl flex flex-col md:flex-row gap-4 border border-slate-200 dark:border-slate-700 shrink-0 items-end">
-          <div className="flex-1 w-full">
-             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">اختر النموذج</label>
-             <div className="relative">
-                <select 
-                  value={selectedTemplateId} 
-                  onChange={(e) => setSelectedTemplateId(e.target.value)}
-                  className="w-full appearance-none bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white py-2 px-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 font-bold"
-                >
-                   <optgroup label="نماذج النظام">
-                      {DEFAULT_TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
-                   </optgroup>
-                   {customTemplates.length > 0 && (
-                      <optgroup label="نماذج مستوردة">
-                         {customTemplates.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
-                      </optgroup>
-                   )}
-                </select>
-                <ChevronDown className="absolute left-3 top-2.5 w-5 h-5 text-slate-400 pointer-events-none" />
-             </div>
-          </div>
+      <div className="flex flex-col lg:flex-row min-h-screen lg:h-screen">
+        {/* Sidebar - Templates Selection */}
+        <div className={`${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 right-0 z-[60] w-80 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700 transition-transform duration-300 overflow-y-auto lg:max-h-screen lg:z-auto`}>
+          <div className="p-6">
+            {/* Search Bar */}
+            <div className="relative mb-6">
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="البحث عن نموذج..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                aria-label="البحث في النماذج"
+                className="w-full pr-10 pl-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 text-slate-800 dark:text-white transition-all"
+              />
+            </div>
 
-          <div className="flex-1 w-full">
-             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">مصدر البيانات (اختياري)</label>
-             <div className="relative">
-                <select 
-                  className="w-full appearance-none bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white py-2 px-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  onChange={(e) => {
-                     const [type, id] = e.target.value.split(':');
-                     if (type && id) setSelectedContext({ type: type as any, id });
-                     else setSelectedContext(null);
+            {/* Category Filter */}
+            <div className="mb-6">
+              <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-3">التصنيف</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {categories.map(cat => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`flex items-center gap-2 p-3 rounded-lg text-sm font-bold transition-all ${
+                      activeCategory === cat.id
+                        ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 ring-2 ring-primary-500'
+                        : 'bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600'
+                    }`}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${cat.color}`}></div>
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Templates List */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-3">النماذج المتاحة</h3>
+              {filteredTemplates.map(template => (
+                <div
+                  key={template.id}
+                  onClick={() => {
+                    setSelectedTemplateId(template.id);
+                    setIsSidebarOpen(false);
                   }}
+                  className={`p-4 rounded-xl border cursor-pointer transition-all hover:shadow-md hover-lift ${
+                    selectedTemplateId === template.id
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'
+                  }`}
                 >
-                   <option value="">-- ملء يدوي --</option>
-                   <optgroup label="الموكلين">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700">
+                      <FileText className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-bold text-slate-800 dark:text-white text-sm truncate mb-1">
+                        {template.title}
+                      </h4>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`text-xs px-2 py-1 rounded-full font-bold ${
+                          template.difficulty === 'basic' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                          template.difficulty === 'intermediate' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                        }`}>
+                          {template.difficulty === 'basic' ? 'أساسي' :
+                           template.difficulty === 'intermediate' ? 'متوسط' : 'متقدم'}
+                        </span>
+                        {template.usageCount && (
+                          <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                            <TrendingUp className="w-3 h-3" />
+                            {template.usageCount}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {template.tags.slice(0, 2).map(tag => (
+                          <span key={tag} className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded">
+                            {tag}
+                          </span>
+                        ))}
+                        {template.tags.length > 2 && (
+                          <span className="text-xs text-slate-400">+{template.tags.length - 2}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Desktop Header */}
+          <div className="hidden lg:block bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-3">
+                  <PenTool className="w-6 h-6 text-primary-600" />
+                  إدارة العقود والمحررات
+                </h1>
+                <p className="text-slate-500 dark:text-slate-400 mt-1">
+                  صياغة قانونية آلية دقيقة وسريعة
+                </p>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                  className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-all hover-lift"
+                  title="خيارات متقدمة"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleDownloadWord}
+                  className="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all hover-lift"
+                >
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  <span className="hidden sm:inline">Word</span>
+                </button>
+                <button
+                  onClick={handleDownloadPDF}
+                  className="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all hover-lift"
+                >
+                  <Download className="w-4 h-4" />
+                  <span className="hidden sm:inline">PDF</span>
+                </button>
+                <button
+                  onClick={handlePrint}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-primary-700 transition-all hover-lift shadow-sm"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span className="hidden sm:inline">طباعة</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+       {/* Advanced Options Bar */}
+          {showAdvancedOptions && (
+            <div className="bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1">
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">مصدر البيانات (اختياري)</label>
+                  <select 
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-white py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 font-bold"
+                    aria-label="اختيار مصدر البيانات"
+                    onChange={(e) => {
+                      const [type, id] = e.target.value.split(':');
+                      if (type && id) setSelectedContext({ type: type as any, id });
+                      else setSelectedContext(null);
+                    }}
+                  >
+                    <option value="">-- ملء يدوي --</option>
+                    <optgroup label="الموكلين">
                       {clients.map(c => <option key={c.id} value={`client:${c.id}`}>{c.name}</option>)}
-                   </optgroup>
-                   <optgroup label="القضايا">
+                    </optgroup>
+                    <optgroup label="القضايا">
                       {cases.map(c => <option key={c.id} value={`case:${c.id}`}>{c.title}</option>)}
-                   </optgroup>
-                </select>
-                <ChevronDown className="absolute left-3 top-2.5 w-5 h-5 text-slate-400 pointer-events-none" />
-             </div>
-          </div>
+                    </optgroup>
+                  </select>
+                </div>
+                
+                <div className="flex items-end gap-2">
+                  <input 
+                    type="file" 
+                    ref={importInputRef} 
+                    accept=".docx" 
+                    className="hidden" 
+                    onChange={handleImportWord}
+                    aria-label="استيراد ملف Word"
+                  />
+                  <button 
+                    onClick={() => importInputRef.current?.click()}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all hover-lift whitespace-nowrap"
+                    title="استيراد ملف Word (.docx) وتحديد المتغيرات تلقائياً {{KEY}}"
+                  >
+                    <Upload className="w-4 h-4" /> استيراد Word
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
-          {/* Import Button */}
-          <div>
-             <input type="file" ref={importInputRef} accept=".docx" className="hidden" onChange={handleImportWord} />
-             <button 
-               onClick={() => importInputRef.current?.click()}
-               className="h-[42px] px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-colors whitespace-nowrap"
-               title="استيراد ملف Word (.docx) وتحديد المتغيرات تلقائياً {{KEY}}"
-             >
-                <Upload className="w-4 h-4" /> استيراد Word
-             </button>
-          </div>
-       </div>
-
-       {/* 3. Main Workspace (Split View) */}
-       <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0 overflow-hidden">
-          
-          {/* Left: Input Form */}
-          <div className="w-full lg:w-1/3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden">
-             <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
+          {/* Main Workspace */}
+          <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-screen lg:min-h-0 overflow-hidden p-4 lg:p-6">
+            
+            {/* Left: Input Form */}
+            <div className="w-full lg:w-1/3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden max-h-[70vh] lg:max-h-full">
+              <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center shrink-0">
                 <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                   <FileText className="w-4 h-4 text-indigo-500" /> البيانات المطلوبة
+                  <FileText className="w-4 h-4 text-indigo-500" /> البيانات المطلوبة
                 </h3>
                 <button 
                   onClick={() => setFormData({})} 
                   className="text-xs text-slate-500 hover:text-red-500 flex items-center gap-1"
                   title="مسح جميع الحقول"
                 >
-                   <RefreshCw className="w-3 h-3" /> إعادة تعيين
+                  <RefreshCw className="w-3 h-3" /> إعادة تعيين
                 </button>
-             </div>
-             
-             <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                 {currentTemplate?.placeholders && currentTemplate.placeholders.length > 0 ? (
-                   currentTemplate.placeholders.map(field => (
-                      <div key={field}>
-                         <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1">
-                            {field.replace(/_/g, ' ')}
-                         </label>
-                         <input 
-                           type="text" 
-                           value={formData[field] || ''}
-                           onChange={(e) => handleInputChange(field, e.target.value)}
-                           className="w-full border p-2 rounded-lg bg-slate-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none transition-all text-sm"
-                           placeholder={`أدخل ${field.toLowerCase()}...`}
-                         />
-                      </div>
-                   ))
+                  currentTemplate.placeholders.map(field => (
+                    <div key={field} className="space-y-2">
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400">
+                        {field.replace(/_/g, ' ')}
+                      </label>
+                      <input 
+                        type="text" 
+                        value={formData[field] || ''}
+                        onChange={(e) => handleInputChange(field, e.target.value)}
+                        className="w-full border border-slate-300 dark:border-slate-600 p-3 rounded-lg bg-slate-50 dark:bg-slate-700 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none transition-all text-sm"
+                        placeholder={`أدخل ${field.toLowerCase()}...`}
+                      />
+                    </div>
+                  ))
                 ) : (
-                   <div className="text-center text-slate-400 py-8">
-                      <p className="text-sm">لا توجد حقول متغيرة (Placeholders) في هذا النموذج.</p>
-                      <p className="text-xs mt-2">لاستيراد نموذج، استخدم صيغة {'{{KEY}}'} داخل ملف Word.</p>
-                   </div>
+                  <div className="text-center text-slate-400 py-8">
+                    <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                    <p className="text-sm">لا توجد حقول متغيرة في هذا النموذج</p>
+                    <p className="text-xs mt-2">لاستيراد نموذج، استخدم صيغة {'{{KEY}}'} داخل ملف Word</p>
+                  </div>
                 )}
-             </div>
-          </div>
+              </div>
+            </div>
 
-          {/* Right: Preview (A4 Paper Style) */}
-          <div className="flex-1 bg-slate-200 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700 overflow-y-auto p-8 flex justify-center shadow-inner">
-             <div 
-               ref={printRef}
-               className="bg-white text-black shadow-lg p-12 w-full max-w-[210mm] min-h-[297mm] transition-all"
-               style={{ fontFamily: "'Cairo', sans-serif", fontSize: '14px', lineHeight: '1.8' }}
-             >
+            {/* Right: Preview */}
+            <div className="flex-1 bg-slate-100 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700 overflow-y-auto p-2 sm:p-4 lg:p-8 flex justify-center shadow-inner">
+              <div 
+                ref={printRef}
+                className="bg-white text-black shadow-xl rounded-lg p-4 sm:p-8 lg:p-12 w-full max-w-[210mm] min-h-[200px] lg:min-h-[297mm] transition-all font-arabic custom-scrollbar"
+                dir="rtl"
+              >
                 <div dangerouslySetInnerHTML={{ __html: previewContent }} />
-             </div>
+              </div>
+            </div>
           </div>
+        </div>
+      </div>
 
-       </div>
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[55] lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
     </div>
   );
 };

@@ -22,7 +22,13 @@ import {
   PenTool,
   Archive,
   BrainCircuit,
-  Library
+  Library,
+  LayoutDashboard,
+  Gavel,
+  File,
+  Shield,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { AppUser } from '../types';
 import { canUseVoiceSearch, canUseSearch, canAccessNotifications } from '../utils/permissions';
@@ -34,6 +40,7 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
   badge?: number;
   pinned?: boolean;
+  special?: boolean;
 }
 
 interface MobileNavigationProps {
@@ -47,6 +54,70 @@ interface MobileNavigationProps {
   pinnedItems?: string[];
   onNotificationsToggle?: () => void;
 }
+
+interface NavGroup {
+  title: string;
+  items: NavItem[];
+}
+
+// Navigation Groups Configuration (same as desktop)
+const navGroups: NavGroup[] = [
+  {
+    title: 'لوحة التحكم',
+    items: [
+      { id: 'dashboard', label: 'نظرة عامة', icon: LayoutDashboard },
+      { id: 'ai-assistant', label: 'المساعد الذكي', icon: BrainCircuit, special: true },
+    ]
+  },
+  {
+    title: 'إدارة القضايا',
+    items: [
+      { id: 'cases', label: 'جميع القضايا', icon: Briefcase },
+      { id: 'hearings', label: 'الجلسات', icon: Gavel },
+      { id: 'appointments', label: 'المواعيد', icon: Calendar },
+      { id: 'tasks', label: 'المهام', icon: CheckSquare },
+      { id: 'generator', label: 'العقود والمحررات', icon: PenTool },
+    ]
+  },
+  {
+    title: 'إدارة العملاء',
+    items: [
+      { id: 'clients', label: 'الموكلين', icon: Users },
+      { id: 'lawyers', label: 'فريق المحامين', icon: Scale },
+    ]
+  },
+  {
+    title: 'المصادر القانونية',
+    items: [
+      { id: 'references', label: 'المراجع القانونية', icon: Library },
+      { id: 'locations', label: 'دليل المحاكم', icon: Map },
+      { id: 'calculators', label: 'الحاسبات القانونية', icon: Calculator },
+    ]
+  },
+  {
+    title: 'المستندات والأرشيف',
+    items: [
+      { id: 'documents', label: 'المستندات', icon: File },
+      { id: 'archive', label: 'الأرشيف الرقمي', icon: Archive },
+    ]
+  },
+  {
+    title: 'المالية والتقارير',
+    items: [
+      { id: 'fees', label: 'الأتعاب والمصروفات', icon: Wallet },
+      { id: 'reports', label: 'التقارير والإحصائيات', icon: BarChart3 },
+    ]
+  },
+  {
+    title: 'إدارة النظام',
+    items: [
+      { id: 'settings', label: 'الإعدادات العامة', icon: Settings },
+      { id: 'advanced-settings', label: 'الإعدادات المتقدمة', icon: Settings },
+      { id: 'subscription', label: 'الاشتراكات والباقات', icon: Shield },
+      { id: 'office-admin', label: 'إدارة المكتب', icon: Shield },
+    ]
+  }
+];
 
 // Add custom animations
 const styleElement = document.createElement('style');
@@ -92,24 +163,29 @@ const MobileNavigationComponent: React.FC<MobileNavigationProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [userPinnedItems, setUserPinnedItems] = useState<string[]>(pinnedItems);
-  const [isVisible, setIsVisible] = useState(true);
+  const [headerVisible, setHeaderVisible] = useState(true);
+  const [bottomNavVisible, setBottomNavVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
   const [isMenuLoading, setIsMenuLoading] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<{ [key: string]: boolean }>({});
 
-  // Auto-hide header on scroll logic
+  // Auto-hide header and bottom nav on scroll logic
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
 
       // Always show at the very top
       if (currentScrollY < 10) {
-        setIsVisible(true);
+        setHeaderVisible(true);
+        setBottomNavVisible(true);
       } else if (currentScrollY > lastScrollY && currentScrollY > 50) {
         // Scrolling down and not at the top
-        setIsVisible(false);
+        setHeaderVisible(false);
+        setBottomNavVisible(false);
       } else if (currentScrollY < lastScrollY) {
         // Scrolling up
-        setIsVisible(true);
+        setHeaderVisible(true);
+        setBottomNavVisible(true);
       }
 
       setLastScrollY(currentScrollY);
@@ -153,36 +229,101 @@ const MobileNavigationComponent: React.FC<MobileNavigationProps> = ({
     }
   }, [isMenuOpen]);
 
-  // Memoized navigation items for better performance
-  const primaryNavItems = useMemo(() => [
-    { id: 'dashboard', label: 'الرئيسية', icon: Home },
-    { id: 'cases', label: 'القضايا', icon: Briefcase },
-    { id: 'clients', label: 'الموكلين', icon: Users },
-    { id: 'appointments', label: 'المواعيد', icon: Calendar },
-  ], []);
+  // Helper to check permissions (same as desktop)
+  const checkPermission = useCallback((moduleId: string): boolean => {
+    if (!currentUser) return false;
+    
+    // Super admin always has access
+    if (currentUser.email === 'elswa770@gmail.com') {
+      return true;
+    }
+    
+    // Admin always has access
+    if (currentUser.username === 'admin' || currentUser.roleLabel === 'مدير النظام') {
+      return true;
+    }
 
-  const secondaryNavItems = useMemo(() => [
-    { id: 'hearings', label: 'الجلسات', icon: Scale },
-    { id: 'tasks', label: 'المهام', icon: CheckSquare },
-    { id: 'documents', label: 'المستندات', icon: FileText },
-    { id: 'fees', label: 'الأتعاب', icon: Wallet },
-    { id: 'reports', label: 'التقارير', icon: BarChart3 },
-    { id: 'locations', label: 'دليل المحاكم', icon: Map },
-    { id: 'calculators', label: 'الحاسبات', icon: Calculator },
-    { id: 'generator', label: 'منشئ العقود', icon: PenTool },
-    { id: 'archive', label: 'الأرشيف', icon: Archive },
-    { id: 'lawyers', label: 'المحامون', icon: Users },
-    { id: 'ai-assistant', label: 'المساعد الذكي', icon: BrainCircuit },
-    { id: 'references', label: 'المراجع', icon: Library },
-    { id: 'settings', label: 'الإعدادات', icon: Settings },
-  ], []);
+    // Special handling for 'fees'
+    if (moduleId === 'fees') {
+       const hasFees = currentUser.permissions.find(p => p.moduleId === 'fees')?.access !== 'none';
+       const hasExpenses = currentUser.permissions.find(p => p.moduleId === 'expenses')?.access !== 'none';
+       return hasFees || hasExpenses;
+    }
+    
+    // Check main permissions
+    const permission = currentUser.permissions.find(p => p.moduleId === moduleId);
+    return permission ? permission.access !== 'none' : false;
+  }, [currentUser]);
+
+  // Filter navigation groups based on permissions
+  const visibleGroups = useMemo(() => {
+    const groups = navGroups.map(group => ({
+      ...group,
+      items: group.items.filter(item => checkPermission(item.id))
+    })).filter(group => group.items.length > 0);
+    
+    // Add super admin items if applicable
+    if (currentUser?.email === 'elswa770@gmail.com') {
+      const adminGroup = groups.find(g => g.title === 'إدارة النظام');
+      if (adminGroup && !adminGroup.items.find(item => item.id === 'super-admin')) {
+        adminGroup.items.push({ id: 'super-admin', label: 'الإدارة العليا', icon: Shield });
+      }
+    }
+    
+    return groups;
+  }, [checkPermission, currentUser]);
+
+  // Get all navigation items for bottom nav (first 4 most important)
+  const primaryNavItems = useMemo(() => {
+    const allItems = visibleGroups.flatMap(g => g.items);
+    // Priority order for bottom navigation
+    const priorityOrder = ['dashboard', 'cases', 'clients', 'appointments'];
+    const primaryItems = priorityOrder.map(id => allItems.find(item => item.id === id)).filter(Boolean) as NavItem[];
+    
+    // Fill remaining slots if priority items not found
+    if (primaryItems.length < 4) {
+      const remainingItems = allItems.filter(item => !priorityOrder.includes(item.id));
+      primaryItems.push(...remainingItems.slice(0, 4 - primaryItems.length));
+    }
+    
+    return primaryItems.slice(0, 4);
+  }, [visibleGroups]);
+
+  // Get all items for slide menu
+  const allNavItems = useMemo(() => {
+    return visibleGroups.flatMap(g => g.items);
+  }, [visibleGroups]);
 
   // Filter navigation items based on search query
-  const filteredSecondaryItems = useMemo(() => 
-    secondaryNavItems.filter(item => 
-      item.label.toLowerCase().includes(searchQuery.toLowerCase())
-    ), [searchQuery, secondaryNavItems]
+  const filteredGroups = useMemo(() => 
+    visibleGroups.map(group => ({
+      ...group,
+      items: group.items.filter(item => 
+        item.label.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    })).filter(group => group.items.length > 0),
+    [searchQuery, visibleGroups]
   );
+
+  // Toggle section collapse
+  const toggleSection = useCallback((sectionTitle: string) => {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [sectionTitle]: !prev[sectionTitle]
+    }));
+  }, []);
+
+  // Auto-expand sections with active items
+  useEffect(() => {
+    const newCollapsedSections = { ...collapsedSections };
+    visibleGroups.forEach(group => {
+      const hasActiveItem = group.items.some(item => activePage === item.id);
+      if (hasActiveItem) {
+        newCollapsedSections[group.title] = false;
+      }
+    });
+    setCollapsedSections(newCollapsedSections);
+  }, [activePage, visibleGroups]);
 
   // Navigation colors constants
   const navColors = {
@@ -433,7 +574,7 @@ const MobileNavigationComponent: React.FC<MobileNavigationProps> = ({
       {/* Mobile Header - HIGHER Z-INDEX with Scroll Hide/Show */}
       <div
         className={`md:hidden fixed top-0 left-0 right-0 z-[60] bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 transition-all duration-300 ease-in-out ${
-          isVisible ? 'translate-y-0' : '-translate-y-full'
+          headerVisible ? 'translate-y-0' : '-translate-y-full'
         }`}
       >
         <div className="flex items-center justify-between p-4">
@@ -526,8 +667,12 @@ const MobileNavigationComponent: React.FC<MobileNavigationProps> = ({
         </div>
       </div>
 
-      {/* Mobile Bottom Navigation - HIGHER Z-INDEX */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-[60] bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700">
+      {/* Mobile Bottom Navigation - HIGHER Z-INDEX with Scroll Hide/Show */}
+      <div
+        className={`md:hidden fixed bottom-0 left-0 right-0 z-[60] bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 transition-all duration-300 ease-in-out ${
+          bottomNavVisible ? 'translate-y-0' : 'translate-y-full'
+        }`}
+      >
         <div className="grid grid-cols-4 gap-1 p-2">
           {primaryNavItems.map((item) => {
             const Icon = item.icon;
@@ -671,97 +816,135 @@ const MobileNavigationComponent: React.FC<MobileNavigationProps> = ({
                 </div>
               </div>
               
-              {/* All Navigation Items */}
+              {/* All Navigation Items - Organized by Sections */}
               <div>
                 <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-3">جميع الأقسام</h3>
-                <div className="space-y-1">
-                  {/* Pinned Items First */}
-                  {[...primaryNavItems, ...filteredSecondaryItems]
-                    .filter(item => userPinnedItems.includes(item.id))
-                    .map((item) => {
-                      const Icon = item.icon;
-                      const isActive = activePage === item.id;
-                      
-                      return (
+                <div className="space-y-3">
+                  {filteredGroups.map((group, groupIndex) => {
+                    const isCollapsed = collapsedSections[group.title] || false;
+                    const hasActiveItem = group.items.some(item => activePage === item.id);
+                    
+                    return (
+                      <div key={groupIndex} className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                        {/* Section Header */}
                         <button
-                          key={`pinned-${item.id}`}
-                          onClick={() => handleNavigate(item.id)}
+                          onClick={() => toggleSection(group.title)}
                           className={`
-                            w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-300 ease-in-out text-right
-                            ${isActive 
-                              ? navColors.active
-                              : navColors.inactive
-                            }
+                            w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider
+                            hover:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all duration-200
+                            ${hasActiveItem ? 'text-slate-300 bg-slate-50 dark:bg-slate-700/20' : ''}
                           `}
-                          aria-label={`${item.label} (مثبت)`}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => handleKeyDown(e, item.id)}
                         >
-                          {Icon && <Icon className="w-5 h-5" />}
-                          <span className="font-medium">{item.label}</span>
-                          <div className="flex items-center gap-1 mr-auto">
-                            <span className="text-xs text-amber-500">📌</span>
-                            {isActive && (
-                              <div className="w-2 h-2 bg-primary-500 rounded-full"></div>
+                          <span>{group.title}</span>
+                          <div className="flex items-center gap-2">
+                            {hasActiveItem && (
+                              <div className="w-2 h-2 bg-primary-500 rounded-full animate-pulse"></div>
                             )}
+                            <ChevronDown 
+                              className={`w-3 h-3 transition-transform duration-200 ${isCollapsed ? 'rotate-180' : ''}`}
+                            />
                           </div>
                         </button>
-                      );
-                    })}
-                  
-                  {/* Regular Items */}
-                  {[...primaryNavItems, ...filteredSecondaryItems]
-                    .filter(item => !userPinnedItems.includes(item.id))
-                    .map((item) => {
-                      const Icon = item.icon;
-                      const isActive = activePage === item.id;
-                      
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => handleNavigate(item.id)}
-                          className={`
-                            w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-300 ease-in-out text-right group
-                            ${isActive 
-                              ? navColors.active
-                              : navColors.inactive
-                            }
-                          `}
-                          aria-label={item.label}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => handleKeyDown(e, item.id)}
-                        >
-                          {Icon && <Icon className="w-5 h-5" />}
-                          <span className="font-medium">{item.label}</span>
-                          <div className="flex items-center gap-1 mr-auto opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                togglePinItem(item.id);
-                              }}
-                              className="p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-all duration-200"
-                              aria-label={`تثبيت ${item.label}`}
-                              role="button"
-                              tabIndex={0}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  togglePinItem(item.id);
-                                }
-                              }}
-                            >
-                              <span className="text-xs">📌</span>
-                            </button>
-                            {isActive && (
-                              <div className="w-2 h-2 bg-primary-500 rounded-full"></div>
-                            )}
+
+                        {/* Section Content */}
+                        <div className={`
+                          transition-all duration-300 ease-in-out overflow-hidden
+                          ${isCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}
+                        `}>
+                          <div className="space-y-1 p-1">
+                            {/* Pinned Items First */}
+                            {group.items
+                              .filter(item => userPinnedItems.includes(item.id))
+                              .map((item) => {
+                                const Icon = item.icon;
+                                const isActive = activePage === item.id;
+                                
+                                return (
+                                  <button
+                                    key={`pinned-${item.id}`}
+                                    onClick={() => handleNavigate(item.id)}
+                                    className={`
+                                      w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-300 ease-in-out text-right
+                                      ${isActive 
+                                        ? navColors.active
+                                        : navColors.inactive
+                                      }
+                                    `}
+                                    aria-label={`${item.label} (مثبت)`}
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(e) => handleKeyDown(e, item.id)}
+                                  >
+                                    {Icon && <Icon className="w-5 h-5" />}
+                                    <span className="font-medium text-sm">{item.label}</span>
+                                    <div className="flex items-center gap-1 mr-auto">
+                                      <span className="text-xs text-amber-500">📌</span>
+                                      {isActive && (
+                                        <div className="w-2 h-2 bg-primary-500 rounded-full"></div>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            
+                            {/* Regular Items */}
+                            {group.items
+                              .filter(item => !userPinnedItems.includes(item.id))
+                              .map((item) => {
+                                const Icon = item.icon;
+                                const isActive = activePage === item.id;
+                                
+                                return (
+                                  <button
+                                    key={item.id}
+                                    onClick={() => handleNavigate(item.id)}
+                                    className={`
+                                      w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-300 ease-in-out text-right group
+                                      ${isActive 
+                                        ? navColors.active
+                                        : navColors.inactive
+                                      }
+                                      ${item.special && !isActive ? 'text-indigo-600 dark:text-indigo-400' : ''}
+                                    `}
+                                    aria-label={item.label}
+                                    role="button"
+                                    tabIndex={0}
+                                    onKeyDown={(e) => handleKeyDown(e, item.id)}
+                                  >
+                                    {Icon && <Icon className="w-5 h-5" />}
+                                    <span className="font-medium text-sm">{item.label}</span>
+                                    <div className="flex items-center gap-1 mr-auto opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          togglePinItem(item.id);
+                                        }}
+                                        className="p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-all duration-200"
+                                        aria-label={`تثبيت ${item.label}`}
+                                        role="button"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            togglePinItem(item.id);
+                                          }
+                                        }}
+                                      >
+                                        <span className="text-xs">📌</span>
+                                      </button>
+                                      {isActive && (
+                                        <div className="w-2 h-2 bg-primary-500 rounded-full"></div>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
                           </div>
-                        </button>
-                      );
-                    })}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>

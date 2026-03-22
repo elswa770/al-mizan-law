@@ -1229,24 +1229,24 @@ const ArchivePage: React.FC<ArchiveProps> = ({ cases, clients, onUpdateCase, onN
 
   const renderPhysicalArchive = () => (
     <div className="space-y-6 animate-in fade-in">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Stats */}
-        <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4">
+        <div className="bg-white dark:bg-slate-800 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3 sm:gap-4">
           <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-full">
-            <Box className="w-6 h-6" />
+            <Box className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">إجمالي الوحدات</p>
-            <p className="text-xl font-bold text-slate-800 dark:text-white">{locations.length}</p>
+            <p className="text-lg sm:text-xl font-bold text-slate-800 dark:text-white">{locations.length}</p>
           </div>
         </div>
-        <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-4">
+        <div className="bg-white dark:bg-slate-800 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center gap-3 sm:gap-4">
           <div className="p-3 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full">
-            <CheckCircle className="w-6 h-6" />
+            <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
             <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">السعة المستغلة</p>
-            <p className="text-xl font-bold text-slate-800 dark:text-white">
+            <p className="text-lg sm:text-xl font-bold text-slate-800 dark:text-white">
               {Math.round((locations.reduce((acc, loc) => acc + loc.occupied, 0) / locations.reduce((acc, loc) => acc + loc.capacity, 0)) * 100)}%
             </p>
           </div>

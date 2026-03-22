@@ -180,6 +180,17 @@ const Documents: React.FC<DocumentsProps> = ({ cases, clients, onCaseClick, onCl
     return matchesSearch && matchesCategory && matchesSource;
   });
 
+  // Debug: Log data for mobile debugging
+  console.log('📱 Mobile Documents Debug:', {
+    totalDocs: allDocuments.length,
+    filteredDocs: filteredDocs.length,
+    searchTerm,
+    activeCategory,
+    sourceFilter,
+    viewMode,
+    sampleDoc: allDocuments[0]
+  });
+
   // --- 3. Categories Config ---
   const categories = [
     { id: 'all', label: 'الكل', icon: FolderOpen, count: allDocuments.length },
@@ -192,10 +203,10 @@ const Documents: React.FC<DocumentsProps> = ({ cases, clients, onCaseClick, onCl
 
   // --- 4. Render Helpers ---
   const getFileIcon = (type: string) => {
-    if (type.includes('pdf')) return <FileText className="w-8 h-8 text-red-500" />;
-    if (type.includes('image')) return <File className="w-8 h-8 text-purple-500" />;
-    if (type.includes('word')) return <FileText className="w-8 h-8 text-blue-500" />;
-    return <File className="w-8 h-8 text-slate-400" />;
+    if (type.includes('pdf')) return <FileText className="w-6 h-6 sm:w-8 sm:h-8 text-red-500" />;
+    if (type.includes('image')) return <File className="w-6 h-6 sm:w-8 sm:h-8 text-purple-500" />;
+    if (type.includes('word')) return <FileText className="w-6 h-6 sm:w-8 sm:h-8 text-blue-500" />;
+    return <File className="w-6 h-6 sm:w-8 sm:h-8 text-slate-400" />;
   };
 
   const formatFileSize = (bytes: number) => {
@@ -313,10 +324,10 @@ const Documents: React.FC<DocumentsProps> = ({ cases, clients, onCaseClick, onCl
   };
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 h-[calc(100vh-140px)]">
+    <div className="flex flex-col md:flex-row gap-4 md:gap-6 min-h-[calc(100vh-140px)] md:h-[calc(100vh-140px)]">
       
       {/* Sidebar Filters */}
-      <div className="w-full md:w-64 shrink-0 space-y-4">
+      <div className="w-full md:w-64 shrink-0 space-y-4 md:overflow-y-auto md:h-full">
         <div className="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
            <h3 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
               <Filter className="w-4 h-4 text-slate-500" /> تصنيف المستندات
@@ -365,93 +376,97 @@ const Documents: React.FC<DocumentsProps> = ({ cases, clients, onCaseClick, onCl
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-         {/* Top Bar */}
-         <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50 dark:bg-slate-800">
+      <div className="flex-1 flex flex-col bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden min-h-[500px] md:h-full">
+         {/* Top Bar - Fixed */}
+         <div className="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-4 bg-slate-50 dark:bg-slate-800 shrink-0">
             <div className="relative w-full sm:w-96">
-               <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+               <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 sm:w-5 sm:h-5" />
                <input 
                  type="text" 
                  placeholder="بحث باسم المستند، الموكل، أو القضية..." 
                  value={searchTerm}
                  onChange={(e) => setSearchTerm(e.target.value)}
-                 className="w-full pr-10 pl-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary-500 text-slate-900 dark:text-white"
+                 className="w-full pr-10 pl-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:border-primary-500 text-slate-900 dark:text-white text-sm"
                />
             </div>
             
             <div className="flex items-center gap-2 w-full sm:w-auto">
                <div className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg flex overflow-hidden">
                   <button onClick={() => setViewMode('grid')} className={`p-2 ${viewMode === 'grid' ? 'bg-slate-100 dark:bg-slate-600 text-slate-900 dark:text-white' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                     <Grid className="w-5 h-5" />
+                     <Grid className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
                   <div className="w-px bg-slate-300 dark:bg-slate-600"></div>
                   <button onClick={() => setViewMode('table')} className={`p-2 ${viewMode === 'table' ? 'bg-slate-100 dark:bg-slate-600 text-slate-900 dark:text-white' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                     <List className="w-5 h-5" />
+                     <List className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
                </div>
                
                <button 
                   onClick={handleOpenUpload}
-                  className="flex items-center gap-2 bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-primary-700 shadow-sm transition-colors" 
+                  className="flex items-center gap-2 bg-primary-600 text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-bold hover:bg-primary-700 shadow-sm transition-colors" 
                   title="رفع مستند جديد"
                >
-                  <Upload className="w-4 h-4" /> رفع جديد
+                  <Upload className="w-4 h-4" /> 
+                  <span className="hidden sm:inline">رفع جديد</span>
+                  <span className="sm:hidden">رفع</span>
                </button>
             </div>
          </div>
 
-         {/* Content Area */}
-         <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50 dark:bg-slate-900/50">
+         {/* Content Area - Scrollable */}
+         <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6 bg-slate-50/50 dark:bg-slate-900/50 min-h-[400px]">
             {filteredDocs.length > 0 ? (
                viewMode === 'grid' ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
                      {filteredDocs.map(doc => (
-                        <div key={doc.uniqueKey} className="group bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all relative">
+                        <div key={doc.uniqueKey} className="group bg-white dark:bg-slate-800 p-3 sm:p-4 md:p-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:shadow-md transition-all relative flex flex-col h-full min-h-[250px] sm:min-h-[280px] md:min-h-[320px]">
                            {doc.isOriginal && (
                               <div className="absolute top-2 left-2 text-[10px] bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800 font-bold z-10">
                                  أصل
                               </div>
                            )}
                            
-                           <div className="flex items-start gap-4 mb-3">
-                              <div className="bg-slate-50 dark:bg-slate-700 p-3 rounded-lg group-hover:bg-primary-50 dark:group-hover:bg-primary-900/20 transition-colors">
+                           <div className="flex items-start gap-2 sm:gap-3 md:gap-4 mb-2 sm:mb-3 md:mb-4 flex-shrink-0">
+                              <div className="bg-slate-50 dark:bg-slate-700 p-2 sm:p-3 md:p-4 rounded-lg group-hover:bg-primary-50 dark:group-hover:bg-primary-900/20 transition-colors flex-shrink-0">
                                  {getFileIcon(doc.type)}
                               </div>
                               <div className="flex-1 min-w-0">
-                                 <h4 className="font-bold text-slate-800 dark:text-white text-sm truncate mb-1" title={doc.title}>
+                                 <h4 className="font-bold text-slate-800 dark:text-white text-xs sm:text-sm md:text-base truncate mb-1 sm:mb-2" title={doc.title}>
                                     {doc.title}
                                  </h4>
-                                 <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded inline-block truncate max-w-full">
+                                 <span className="text-[10px] sm:text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded inline-block truncate max-w-full">
                                     {doc.categoryLabel}
                                  </span>
                               </div>
                            </div>
 
-                           <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1 mb-4 pt-3 border-t border-slate-50 dark:border-slate-700">
-                              <div className="flex items-center gap-1.5 truncate">
-                                 {doc.sourceType === 'case' ? <Briefcase className="w-3 h-3 text-indigo-500" /> : <User className="w-3 h-3 text-green-500" />}
+                           <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 space-y-1 sm:space-y-2 mb-2 sm:mb-3 md:mb-4 pt-2 sm:pt-3 border-t border-slate-50 dark:border-slate-700 flex-grow">
+                              <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2 truncate">
+                                 {doc.sourceType === 'case' ? <Briefcase className="w-3 h-3 sm:w-3 sm:h-3 md:w-4 md:h-4 text-indigo-500 flex-shrink-0" /> : <User className="w-3 h-3 sm:w-3 sm:h-3 md:w-4 md:h-4 text-green-500 flex-shrink-0" />}
                                  <span 
-                                    className="cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 hover:underline truncate"
+                                    className="cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 hover:underline truncate text-xs sm:text-xs md:text-sm"
                                     onClick={() => doc.sourceType === 'case' ? onCaseClick && onCaseClick(doc.sourceId) : onClientClick && onClientClick(doc.sourceId)}
                                  >
                                     {doc.sourceName}
                                  </span>
                               </div>
-                              <div className="flex items-center gap-1.5">
-                                 <Calendar className="w-3 h-3 text-slate-400" />
-                                 <span>{doc.date}</span>
+                              <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2">
+                                 <Calendar className="w-3 h-3 sm:w-3 sm:h-3 md:w-4 md:h-4 text-slate-400 flex-shrink-0" />
+                                 <span className="truncate text-xs sm:text-xs md:text-sm">{doc.date}</span>
                               </div>
                            </div>
 
-                           <div className="flex gap-2">
+                           <div className="flex gap-1.5 sm:gap-2 md:gap-3 flex-shrink-0 mt-auto">
                               {doc.url && (
                                  <a 
                                     href={doc.url} 
                                     target="_blank" 
                                     rel="noopener noreferrer" 
-                                    className="flex-1 flex items-center justify-center gap-2 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-600 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                                    className="flex-1 flex items-center justify-center gap-1 sm:gap-1.5 md:gap-2 py-1.5 sm:py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-xs sm:text-xs md:text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-600 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
                                  >
-                                    <Eye className="w-3 h-3" /> معاينة
+                                    <Eye className="w-3 h-3 sm:w-3 sm:h-3 md:w-4 md:h-4" /> 
+                                    <span className="hidden sm:inline">معاينة</span>
+                                    <span className="sm:hidden">عرض</span>
                                  </a>
                               )}
                               {/* Placeholder for actions like Delete/Edit (would require more prop plumbing) */}
@@ -460,47 +475,51 @@ const Documents: React.FC<DocumentsProps> = ({ cases, clients, onCaseClick, onCl
                      ))}
                   </div>
                ) : (
-                  <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                     <table className="w-full text-sm text-right">
-                        <thead className="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-600 font-bold">
+                  <div className="overflow-x-auto -mx-4 sm:mx-0">
+                     <table className="w-full text-right text-xs sm:text-sm min-w-[500px] sm:min-w-full">
+                        <thead className="bg-slate-50 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300">
                            <tr>
-                              <th className="p-3">اسم المستند</th>
-                              <th className="p-3">التصنيف</th>
-                              <th className="p-3">المصدر (القضية/الموكل)</th>
-                              <th className="p-3">التاريخ</th>
-                              <th className="p-3">الإجراءات</th>
+                              <th className="p-2 sm:p-3 text-right min-w-[120px]">المستند</th>
+                              <th className="p-2 sm:p-3 text-right hidden sm:table-cell min-w-[80px]">النوع</th>
+                              <th className="p-2 sm:p-3 text-right hidden md:table-cell min-w-[100px]">المصدر</th>
+                              <th className="p-2 sm:p-3 text-right min-w-[80px]">التاريخ</th>
+                              <th className="p-2 sm:p-3 text-right min-w-[80px]">الإجراءات</th>
                            </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
                            {filteredDocs.map(doc => (
                               <tr key={doc.uniqueKey} className="hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200">
-                                 <td className="p-3">
-                                    <div className="flex items-center gap-3">
+                                 <td className="p-2 sm:p-3">
+                                    <div className="flex items-center gap-2 sm:gap-3">
                                        {getFileIcon(doc.type)}
-                                       <div>
-                                          <p className="font-bold">{doc.title}</p>
-                                          {doc.isOriginal && <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">نسخة أصلية</span>}
+                                       <div className="min-w-0 flex-1">
+                                          <p className="font-bold text-xs sm:text-sm truncate">{doc.title}</p>
+                                          <div className="flex flex-col sm:hidden text-xs text-slate-400 mt-1">
+                                             <div>النوع: {doc.categoryLabel}</div>
+                                             <div>المصدر: {doc.sourceName}</div>
+                                             {doc.isOriginal && <div className="text-amber-600 dark:text-amber-400 font-bold">نسخة أصلية</div>}
+                                          </div>
                                        </div>
                                     </div>
                                  </td>
-                                 <td className="p-3">
+                                 <td className="p-2 sm:p-3 hidden sm:table-cell">
                                     <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-xs">{doc.categoryLabel}</span>
                                  </td>
-                                 <td className="p-3">
+                                 <td className="p-2 sm:p-3 hidden md:table-cell">
                                      <div className="flex items-center gap-2">
                                        {doc.sourceType === 'case' ? <Briefcase className="w-3 h-3 text-indigo-500" /> : <User className="w-3 h-3 text-green-500" />}
                                        <span 
-                                          className="cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 hover:underline font-medium"
+                                          className="cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 hover:underline font-medium truncate"
                                           onClick={() => doc.sourceType === 'case' ? onCaseClick && onCaseClick(doc.sourceId) : onClientClick && onClientClick(doc.sourceId)}
                                        >
                                           {doc.sourceName}
                                        </span>
                                     </div>
                                  </td>
-                                 <td className="p-3 font-mono text-slate-500 dark:text-slate-400">{doc.date}</td>
-                                 <td className="p-3">
+                                 <td className="p-2 sm:p-3 font-mono text-slate-500 dark:text-slate-400 text-xs">{doc.date}</td>
+                                 <td className="p-2 sm:p-3">
                                     {doc.url && (
-                                       <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-primary-600 dark:text-primary-400 hover:underline text-xs font-bold flex items-center gap-1">
+                                       <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-primary-600 dark:text-primary-400 hover:underline text-xs font-bold flex items-center gap-1 whitespace-nowrap">
                                           <ExternalLink className="w-3 h-3" /> فتح
                                        </a>
                                     )}
@@ -512,10 +531,29 @@ const Documents: React.FC<DocumentsProps> = ({ cases, clients, onCaseClick, onCl
                   </div>
                )
             ) : (
-               <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
-                  <FolderOpen className="w-16 h-16 opacity-20 mb-4" />
-                  <p className="text-lg font-medium">لا توجد مستندات تطابق البحث</p>
-                  <p className="text-sm">جرب تغيير الفلاتر أو البحث بكلمات أخرى</p>
+               <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 p-8">
+                  <FolderOpen className="w-16 h-16 sm:w-20 sm:h-20 opacity-20 mb-4" />
+                  <p className="text-base sm:text-lg font-medium mb-2">
+                    {allDocuments.length === 0 ? 'لا توجد مستندات حالياً' : 'لا توجد مستندات تطابق البحث'}
+                  </p>
+                  <p className="text-sm text-center">
+                    {allDocuments.length === 0 
+                      ? 'ابدأ بإضافة مستندات جديدة من خلال زر "رفع جديد"' 
+                      : 'جرب تغيير الفلاتر أو البحث بكلمات أخرى'
+                    }
+                  </p>
+                  {allDocuments.length > 0 && (
+                    <button 
+                      onClick={() => {
+                        setSearchTerm('');
+                        setActiveCategory('all');
+                        setSourceFilter('all');
+                      }}
+                      className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold hover:bg-primary-700 transition-colors"
+                    >
+                      إعادة تعيين الفلاتر
+                    </button>
+                  )}
                </div>
             )}
          </div>

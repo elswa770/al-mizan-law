@@ -119,6 +119,24 @@ const Cases: React.FC<CasesProps> = ({ cases, clients, lawyers = [], currentUser
     e.preventDefault();
     if (!onAddCase) return;
     
+    // Validate required fields
+    if (!formData.title?.trim()) {
+      alert('يرجى إدخال عنوان القضية');
+      return;
+    }
+    if (!formData.caseNumber?.trim()) {
+      alert('يرجى إدخال رقم القضية');
+      return;
+    }
+    if (!formData.clientId) {
+      alert('يرجى اختيار الموكل');
+      return;
+    }
+    if (!currentUser?.firmId) {
+      alert('خطأ: لا يمكن إنشاء قضية جديدة. يرجى إعادة تحميل الصفحة.');
+      return;
+    }
+    
     setIsSubmitting(true);
     
     try {
@@ -204,7 +222,7 @@ const Cases: React.FC<CasesProps> = ({ cases, clients, lawyers = [], currentUser
       });
     } catch (error) {
       console.error('Error adding case:', error);
-      // Show error message to user
+      alert('حدث خطأ أثناء إنشاء القضية. يرجى المحاولة مرة أخرى.');
     } finally {
       setIsSubmitting(false);
     }
@@ -264,7 +282,7 @@ const Cases: React.FC<CasesProps> = ({ cases, clients, lawyers = [], currentUser
   };
 
   const renderGridView = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 animate-in fade-in">
       {filteredCases.map(c => {
         const opponent = c.opponents && c.opponents.length > 0 ? c.opponents[0] : null;
         return (
@@ -274,36 +292,36 @@ const Cases: React.FC<CasesProps> = ({ cases, clients, lawyers = [], currentUser
               c.status === CaseStatus.CLOSED ? 'bg-slate-400' : 'bg-amber-500'
             }`}></div>
             
-            <div className="p-5 flex-1">
+            <div className="p-4 sm:p-5 flex-1">
               <div className="flex justify-between items-start mb-3">
-                <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded font-bold border border-slate-200 dark:border-slate-600">
+                <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded font-bold border border-slate-200 dark:border-slate-600 truncate max-w-[50%]">
                   {c.caseNumber} / {c.year}
                 </span>
-                <span className={`text-[10px] px-2 py-0.5 rounded font-bold border ${getStatusColor(c.status)}`}>
+                <span className={`text-[10px] px-2 py-0.5 rounded font-bold border flex-shrink-0 ${getStatusColor(c.status)}`}>
                   {c.status}
                 </span>
               </div>
               
               <h3 
                 onClick={() => onCaseClick(c.id)}
-                className="text-lg font-bold text-slate-800 dark:text-white mb-2 cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 transition-colors line-clamp-1"
+                className="text-base sm:text-lg font-bold text-slate-800 dark:text-white mb-2 cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 transition-colors line-clamp-2"
               >
                 {c.title}
               </h3>
               
               <div className="space-y-2 mb-4">
                 <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                  <User className="w-3 h-3" />
+                  <User className="w-3 h-3 flex-shrink-0" />
                   <span className="truncate">{c.clientName} ({c.clientRole})</span>
                 </div>
                 {opponent && (
                   <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                    <Users className="w-3 h-3 text-red-500" />
+                    <Users className="w-3 h-3 text-red-500 flex-shrink-0" />
                     <span className="truncate text-red-600 dark:text-red-400 font-medium">ضد: {opponent.name}</span>
                   </div>
                 )}
                 <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                  <MapPin className="w-3 h-3" />
+                  <MapPin className="w-3 h-3 flex-shrink-0" />
                   <span className="truncate">{c.courtBranch || c.court}</span>
                 </div>
                 {c.caseType && (
@@ -337,62 +355,64 @@ const Cases: React.FC<CasesProps> = ({ cases, clients, lawyers = [], currentUser
   );
 
   const renderTableView = () => (
-    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden animate-in fade-in">
-      <div className="overflow-x-auto">
-        <table className="w-full text-right text-sm">
-          <thead className="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-600">
-            <tr>
-              <th className="p-4 w-[25%]">عنوان الدعوى</th>
-              <th className="p-4">رقم الدعوى</th>
-              <th className="p-4">النوع / المحكمة</th>
-              <th className="p-4">الخصوم</th>
-              <th className="p-4">المحامي المسؤول</th>
-              <th className="p-4">الحالة</th>
-              <th className="p-4">الإجراءات</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-            {filteredCases.map(c => (
-              <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-slate-800 dark:text-slate-200 group">
-                <td className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${
-                        c.status === CaseStatus.OPEN ? 'bg-green-500' :
-                        c.status === CaseStatus.CLOSED ? 'bg-slate-400' : 'bg-amber-500'
-                    }`}></div>
-                    <div>
-                        <div 
-                            onClick={() => onCaseClick(c.id)}
-                            className="font-bold cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 transition-colors text-base"
-                        >
-                            {c.title}
-                        </div>
-                        <div className="text-xs text-slate-400 mt-0.5 line-clamp-1">{c.description || 'لا يوجد وصف'}</div>
-                        {c.filingDate && <div className="text-[10px] text-slate-400 mt-1">تاريخ القيد: {c.filingDate}</div>}
-                    </div>
+    <div className="overflow-x-auto -mx-4 sm:mx-0">
+      <table className="w-full min-w-[600px] sm:min-w-full">
+        <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+          <tr className="text-right text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+            <th className="p-2 sm:p-4 text-right">القضية</th>
+            <th className="p-2 sm:p-4 text-right hidden sm:table-cell">الرقم</th>
+            <th className="p-2 sm:p-4 text-right hidden lg:table-cell">المحكمة</th>
+            <th className="p-2 sm:p-4 text-right hidden md:table-cell">العميل</th>
+            <th className="p-2 sm:p-4 text-right">الحالة</th>
+            <th className="p-2 sm:p-4 text-right">الإجراءات</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+          {filteredCases.map(c => (
+            <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-slate-800 dark:text-slate-200 group">
+              <td className="p-2 sm:p-4">
+                <div className="flex items-start gap-2 sm:gap-3">
+                  <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${
+                      c.status === CaseStatus.OPEN ? 'bg-green-500' :
+                      c.status === CaseStatus.CLOSED ? 'bg-slate-400' : 'bg-amber-500'
+                  }`}></div>
+                  <div className="min-w-0 flex-1">
+                      <div 
+                          onClick={() => onCaseClick(c.id)}
+                          className="font-bold cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 transition-colors text-sm sm:text-base truncate"
+                      >
+                          {c.title}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-2">{c.description || 'لا يوجد وصف'}</div>
+                      <div className="flex flex-col sm:hidden text-xs text-slate-400 mt-1">
+                        {c.caseNumber && <div>رقم: {c.caseNumber} / {c.year}</div>}
+                        {c.court && <div>المحكمة: {c.court}</div>}
+                        <div>العميل: {c.clientName}</div>
+                      </div>
                   </div>
-                </td>
-                <td className="p-4">
-                   <span className="font-mono bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-600 whitespace-nowrap">
-                      {c.caseNumber} / {c.year}
-                   </span>
-                </td>
-                <td className="p-4">
-                   <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-medium">{c.court}</span>
-                      {c.caseType && <span className="text-xs text-indigo-600 dark:text-indigo-400 capitalize">{c.caseType}</span>}
-                      {c.courtBranch && <span className="text-[10px] text-slate-400">{c.courtBranch}</span>}
-                   </div>
-                </td>
-                <td className="p-4">
-                  <div className="flex flex-col gap-2">
+                </div>
+              </td>
+              <td className="p-2 sm:p-4 hidden sm:table-cell">
+                 <span className="font-mono bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-600 whitespace-nowrap">
+                    {c.caseNumber} / {c.year}
+                 </span>
+              </td>
+              <td className="p-2 sm:p-4 hidden lg:table-cell">
+                 <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium truncate">{c.court}</span>
+                    {c.caseType && <span className="text-xs text-indigo-600 dark:text-indigo-400 capitalize truncate">{c.caseType}</span>}
+                    {c.courtBranch && <span className="text-[10px] text-slate-400 truncate">{c.courtBranch}</span>}
+                 </div>
+              </td>
+              <td className="p-2 sm:p-4 hidden md:table-cell">
+                 <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-2">
                       <div className="bg-indigo-50 dark:bg-indigo-900/30 p-1.5 rounded-full text-indigo-600 dark:text-indigo-400">
                          <User className="w-3 h-3" />
                       </div>
                       <div className="flex flex-col">
-                          <span className="font-bold text-xs">{c.clientName}</span>
-                          <span className="text-[10px] text-slate-400">{c.clientRole}</span>
+                          <span className="font-bold text-xs truncate">{c.clientName}</span>
+                          <span className="text-[10px] text-slate-400 truncate">{c.clientRole}</span>
                       </div>
                     </div>
                     {c.opponents && c.opponents.length > 0 && (
@@ -400,27 +420,27 @@ const Cases: React.FC<CasesProps> = ({ cases, clients, lawyers = [], currentUser
                         <div className="bg-red-50 dark:bg-red-900/30 p-1.5 rounded-full text-red-600 dark:text-red-400">
                             <Users className="w-3 h-3" />
                         </div>
-                        <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">{c.opponents[0].name}</span>
+                        <span className="text-xs text-slate-600 dark:text-slate-300 font-medium truncate">{c.opponents[0].name}</span>
                       </div>
                     )}
                   </div>
                 </td>
-                <td className="p-4">
+                <td className="p-2 sm:p-4">
                    {c.assignedLawyerId ? (
                       <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1">
                          <Briefcase className="w-3 h-3 text-slate-400" />
-                         {getLawyerName(c.assignedLawyerId)}
+                         <span className="truncate">{getLawyerName(c.assignedLawyerId)}</span>
                       </span>
                    ) : (
                       <span className="text-xs text-slate-400">-</span>
                    )}
                 </td>
-                <td className="p-4">
+                <td className="p-2 sm:p-4">
                   <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(c.status)}`}>
                     {c.status}
                   </span>
                 </td>
-                <td className="p-4">
+                <td className="p-2 sm:p-4">
                   <button 
                     onClick={() => onCaseClick(c.id)}
                     className="group-hover:bg-white dark:group-hover:bg-slate-800 border border-transparent group-hover:border-slate-200 dark:group-hover:border-slate-600 text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 p-2 rounded-lg transition-all"
@@ -434,7 +454,6 @@ const Cases: React.FC<CasesProps> = ({ cases, clients, lawyers = [], currentUser
           </tbody>
         </table>
       </div>
-    </div>
   );
 
   return (

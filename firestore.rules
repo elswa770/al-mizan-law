@@ -240,6 +240,19 @@ service cloud.firestore {
       return isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId));
     }
 
+    function isValidBudget(data) {
+      return hasRequiredFields(['categoryId', 'budget', 'updatedAt']) &&
+             data.categoryId is string && data.categoryId.size() > 0 && data.categoryId.size() < 50 &&
+             data.budget is number && data.budget > 0 && data.budget <= 1000000 &&
+             data.updatedAt is string && data.updatedAt.size() > 0;
+    }
+
+    function isValidBudgetUpdate(data) {
+      return (!('categoryId' in data) || (data.categoryId is string && data.categoryId.size() > 0 && data.categoryId.size() < 50)) &&
+             (!('budget' in data) || (data.budget is number && data.budget > 0 && data.budget <= 1000000)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() > 0));
+    }
+
     // ===============================================================
     // Domain Validators
     // ===============================================================
@@ -703,6 +716,19 @@ service cloud.firestore {
     // Allow listing all resource usage for super admin
     match /resourceUsage {
       allow list: if isAuthenticated() && isSuperAdmin();
+    }
+
+    // Budgets Collection - Firm-specific with firmId
+    match /budgets/{budgetId} {
+      allow read: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow create: if isAuthenticated() && isValidBudget(request.resource.data) && (isSuperAdmin() || isAdmin() || ('firmId' in request.resource.data && belongsToFirm(request.resource.data.firmId)));
+      allow update: if isAuthenticated() && isValidBudgetUpdate(request.resource.data) && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+      allow delete: if isAuthenticated() && (isSuperAdmin() || isAdmin() || (resource != null && 'firmId' in resource.data && belongsToFirm(resource.data.firmId)));
+    }
+
+    // Allow listing budgets within a firm for budget management
+    match /firms/{firmId}/budgets {
+      allow list: if isAuthenticated() && belongsToFirm(firmId);
     }
   }
 }

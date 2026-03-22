@@ -4,6 +4,8 @@ import { Case, Client, Hearing, PaymentMethod, FinancialTransaction } from '../t
 import { Wallet, TrendingUp, TrendingDown, DollarSign, PieChart, ArrowUpRight, ArrowDownLeft, Filter, Search, Plus, CreditCard, Calendar, FileText, AlertCircle, CheckCircle, Calculator, User, Receipt, X, Building, Smartphone, Banknote, ScrollText, Printer, Share2, Download } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
+import { db, collection, getDocs, doc, setDoc, getDoc } from '../firebase';
+import { auth } from '../firebase'; // Import auth to get current user
 
 interface FeesProps {
   cases: Case[];
@@ -30,6 +32,40 @@ const Fees: React.FC<FeesProps> = ({ cases, clients, hearings, onUpdateCase, can
   const [printingTrans, setPrintingTrans] = useState<{ trans: FinancialTransaction, caseData: Case, clientName: string } | null>(null);
   const invoiceRef = useRef<HTMLDivElement>(null);
 
+  // Get current user and firmId
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentFirmId, setCurrentFirmId] = useState<string>('');
+
+  // Load current user and firmId
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        setCurrentUser(user);
+        
+        // Get user document to retrieve firmId
+        try {
+          const userDocRef = doc(db, 'users', user.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          
+          if (userDocSnap.exists()) {
+            const userData = userDocSnap.data();
+            setCurrentFirmId(userData?.firmId || 'default-firm');
+          } else {
+            setCurrentFirmId('default-firm');
+          }
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+          setCurrentFirmId('default-firm');
+        }
+      } else {
+        setCurrentUser(null);
+        setCurrentFirmId('');
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   // Add Transaction Form Data
   const [transactionData, setTransactionData] = useState({
     caseId: '',
@@ -39,6 +75,333 @@ const Fees: React.FC<FeesProps> = ({ cases, clients, hearings, onUpdateCase, can
     method: 'cash' as PaymentMethod,
     category: ''
   });
+
+  // Auto-complete state
+  const [caseSearchTerm, setCaseSearchTerm] = useState('');
+  const [showCaseSuggestions, setShowCaseSuggestions] = useState(false);
+  const [descriptionSuggestions, setDescriptionSuggestions] = useState<string[]>([]);
+  
+  // Quick templates for common transactions
+  const quickTemplates = [
+    { type: 'payment' as const, description: 'دفعة مقدمة', amount: 1000 },
+    { type: 'payment' as const, description: 'دفعة من حساب الأتعاب', amount: 500 },
+    { type: 'payment' as const, description: 'تسوية نهائية', amount: 2000 },
+    { type: 'expense' as const, description: 'رسوم قضائية', amount: 100, category: 'رسوم' },
+    { type: 'expense' as const, description: 'انتقالات', amount: 50, category: 'انتقالات' },
+    { type: 'expense' as const, description: 'إدارية / نثريات', amount: 30, category: 'إدارية' },
+  ];
+
+  // Advanced expense categories with budgets
+  const [expenseCategories, setExpenseCategories] = useState([
+    { id: 'رسوم', name: 'رسوم قضائية', icon: '⚖️', budget: 500, color: 'blue' },
+    { id: 'انتقالات', name: 'انتقالات ومواصلات', icon: '🚗', budget: 300, color: 'green' },
+    { id: 'إدارية', name: 'إدارية ونثريات', icon: '📋', budget: 200, color: 'orange' },
+    { id: 'تصوير', name: 'تصوير وطباعة', icon: '📷', budget: 150, color: 'purple' },
+    { id: 'ضيافة', name: 'ضيافة ومأكولات', icon: '☕', budget: 100, color: 'red' },
+    { id: 'أبحاث', name: 'أبحاث ودراسات', icon: '📚', budget: 250, color: 'indigo' },
+    { id: 'اتصالات', name: 'اتصالات وانترنت', icon: '📞', budget: 100, color: 'pink' },
+    { id: 'صيانة', name: 'صيانة وتجهيزات', icon: '🔧', budget: 150, color: 'yellow' },
+    { id: 'تدريب', name: 'تدريب وتطوير', icon: '🎓', budget: 300, color: 'teal' },
+    { id: 'أخرى', name: 'مصروفات أخرى', icon: '📦', budget: 100, color: 'gray' }
+  ]);
+
+  // Load saved budgets from Firebase on component mount
+  useEffect(() => {
+    const loadBudgets = async () => {
+      try {
+        console.log('Loading budgets from Firebase...');
+        // Load budgets from Firebase 'budgets' collection
+        const budgetsSnapshot = await getDocs(collection(db, 'budgets'));
+        const savedBudgets = budgetsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        console.log('Loaded budgets from Firebase:', savedBudgets);
+        
+        // Filter budgets by current firmId
+        const firmBudgets = savedBudgets.filter((b: any) => b.firmId === currentFirmId);
+        
+        if (firmBudgets.length > 0) {
+          // Update expenseCategories with saved budgets from Firebase
+          setExpenseCategories(prevCategories => 
+            prevCategories.map(cat => {
+              const savedBudget = firmBudgets.find((b: any) => b.categoryId === cat.id);
+              if (savedBudget && (savedBudget as any).budget) {
+                console.log(`Updating budget for ${cat.name}: ${cat.budget} -> ${(savedBudget as any).budget}`);
+                return { ...cat, budget: (savedBudget as any).budget };
+              }
+              return cat;
+            })
+          );
+          
+          // Clear localStorage to prioritize Firebase data
+          localStorage.removeItem('expenseBudgets');
+          console.log('Cleared localStorage to prioritize Firebase data');
+        } else {
+          console.log('No budgets found in Firebase for firm:', currentFirmId);
+        }
+      } catch (error) {
+        console.error('Error loading budgets from Firebase:', error);
+        console.log('Falling back to localStorage...');
+        
+        // Fallback to localStorage only if Firebase fails completely
+        // AND only if there's no Firebase data for this firm
+        try {
+          const savedBudgets = localStorage.getItem('expenseBudgets');
+          if (savedBudgets) {
+            const budgets = JSON.parse(savedBudgets);
+            console.log('Loaded budgets from localStorage (fallback):', budgets);
+            
+            setExpenseCategories(prevCategories => 
+              prevCategories.map(cat => {
+                const savedBudget = budgets.find((b: any) => b.categoryId === cat.id);
+                if (savedBudget && savedBudget.budget) {
+                  console.log(`Updating budget for ${cat.name} from localStorage: ${cat.budget} -> ${savedBudget.budget}`);
+                  return { ...cat, budget: savedBudget.budget };
+                }
+                return cat;
+              })
+            );
+          }
+        } catch (localError) {
+          console.error('Error loading from localStorage:', localError);
+        }
+      }
+    };
+    
+    // Only load budgets if we have a current firm
+    if (currentFirmId) {
+      loadBudgets();
+    } else {
+      console.log('Waiting for firmId to load budgets...');
+    }
+  }, []);
+
+  // Reload budgets when currentFirmId changes
+  useEffect(() => {
+    if (currentFirmId) {
+      console.log('FirmId changed, reloading budgets for firm:', currentFirmId);
+      const loadBudgets = async () => {
+        try {
+          console.log('Loading budgets from Firebase for firm:', currentFirmId);
+          // Load budgets from Firebase 'budgets' collection
+          const budgetsSnapshot = await getDocs(collection(db, 'budgets'));
+          const savedBudgets = budgetsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          
+          console.log('Loaded budgets for firm:', savedBudgets);
+          
+          // Filter budgets by current firmId
+          const firmBudgets = savedBudgets.filter((b: any) => b.firmId === currentFirmId);
+          
+          if (firmBudgets.length > 0) {
+            // Update expenseCategories with saved budgets from Firebase
+            setExpenseCategories(prevCategories => 
+              prevCategories.map(cat => {
+                const savedBudget = firmBudgets.find((b: any) => b.categoryId === cat.id);
+                if (savedBudget && (savedBudget as any).budget) {
+                  console.log(`Updating budget for ${cat.name}: ${cat.budget} -> ${(savedBudget as any).budget}`);
+                  return { ...cat, budget: (savedBudget as any).budget };
+                }
+                return cat;
+              })
+            );
+            
+            // Clear localStorage to prioritize Firebase data
+            localStorage.removeItem('expenseBudgets');
+            console.log('Cleared localStorage to prioritize Firebase data');
+          } else {
+            console.log('No budgets found in Firebase for firm:', currentFirmId);
+          }
+        } catch (error) {
+          console.error('Error loading budgets from Firebase:', error);
+        }
+      };
+      
+      loadBudgets();
+    }
+  }, [currentFirmId]);
+
+  // State for budget editing
+  const [editingBudget, setEditingBudget] = useState<string | null>(null);
+  const [tempBudgets, setTempBudgets] = useState<{ [key: string]: number }>({});
+  const [budgetUpdateKey, setBudgetUpdateKey] = useState(0); // Key to force re-render
+
+  // Budget editing handlers
+  const startEditingBudget = (categoryId: string) => {
+    setEditingBudget(categoryId);
+    setTempBudgets({
+      ...tempBudgets,
+      [categoryId]: monthlyExpenses.find(cat => cat.id === categoryId)?.budget || 0
+    });
+  };
+
+  const saveBudget = async (categoryId: string) => {
+    const newBudget = tempBudgets[categoryId];
+    if (newBudget && newBudget > 0) {
+      // Update the budget in the categories array
+      const updatedCategories = expenseCategories.map(cat => 
+        cat.id === categoryId ? { ...cat, budget: newBudget } : cat
+      );
+      
+      // Update the expenseCategories state with new budget
+      // In a real app, this would save to backend
+      console.log('Updating budget for category', categoryId, 'to', newBudget);
+      
+      // Update the state to reflect the change immediately
+      setEditingBudget(null);
+      setTempBudgets({});
+      
+      // Update expenseCategories with new budget
+      setExpenseCategories(prevCategories => 
+        prevCategories.map(cat => 
+          cat.id === categoryId ? { ...cat, budget: newBudget } : cat
+        )
+      );
+      
+      // Save to Firebase for persistence
+      try {
+        console.log('Saving budget to Firebase...', { categoryId, newBudget });
+        
+  // Save budget to a 'budgets' collection in Firebase
+        const budgetData = {
+          categoryId,
+          budget: newBudget,
+          firmId: currentFirmId, // Use actual firmId - each user has their own budgets
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser?.email || 'current-user'
+        };
+        
+        // Generate unique document ID using timestamp and category
+        const docId = `${categoryId}_${Date.now()}`;
+        
+        // Save to Firebase
+        await setDoc(doc(db, 'budgets', docId), budgetData, { merge: true });
+        
+        console.log('Budget saved successfully to Firebase with ID:', docId, budgetData);
+        // alert('تم حفظ الميزانية بنجاح في Firebase!'); // Removed - using only one alert
+      } catch (firebaseError) {
+        console.error('Error saving budget to Firebase:', firebaseError);
+        console.log('Falling back to localStorage...');
+        
+        // Fallback to localStorage if Firebase fails
+        try {
+          const savedBudgets = localStorage.getItem('expenseBudgets');
+          const budgets = savedBudgets ? JSON.parse(savedBudgets) : [];
+          
+          const budgetData = {
+            categoryId,
+            budget: newBudget,
+            firmId: currentFirmId || 'default-firm', // Use actual firmId from auth context
+            updatedAt: new Date().toISOString(),
+            updatedBy: currentUser?.email || 'current-user'
+          };
+          
+          // Update or add the budget
+          const existingIndex = budgets.findIndex((b: any) => b.categoryId === categoryId);
+          if (existingIndex >= 0) {
+            budgets[existingIndex] = budgetData;
+          } else {
+            budgets.push(budgetData);
+          }
+          
+          // Save to localStorage as fallback
+          localStorage.setItem('expenseBudgets', JSON.stringify(budgets));
+          
+          console.log('Budget saved to localStorage (fallback):', budgetData);
+        } catch (localError) {
+          console.error('Error saving to localStorage:', localError);
+          alert('حدث خطأ في حفظ الميزانية: ' + localError.message);
+        }
+      }
+      
+      // Force re-render by updating a dummy state or using a key
+      // In React, component will re-render with the new budget values
+      setBudgetUpdateKey(prev => prev + 1);
+    }
+  };
+
+  const cancelEditing = () => {
+    setEditingBudget(null);
+    setTempBudgets({});
+  };
+
+  // Monthly budget tracking
+  const monthlyExpenses = useMemo(() => {
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    
+    const allExpenses = [];
+    
+    // Get all expenses from cases
+    if (cases && Array.isArray(cases)) {
+      cases.forEach(c => {
+        if (c.finance?.history) {
+           c.finance.history.filter(t => t.type === 'expense').forEach(t => {
+              allExpenses.push({
+                 ...t,
+                 caseTitle: c.title,
+                 clientName: clients && Array.isArray(clients) ? clients.find(cl => cl.id === c.clientId)?.name : undefined
+              });
+           });
+        }
+      });
+    }
+    
+    // Get hearing expenses
+    if (hearings && Array.isArray(hearings)) {
+      hearings.forEach(h => {
+        if (h.expenses && h.expenses.amount > 0) {
+          const c = cases && Array.isArray(cases) ? cases.find(x => x.id === h.caseId) : null;
+          allExpenses.push({
+            id: `h-${h.id}`,
+            date: h.date,
+            category: 'رسوم',
+            description: h.expenses.description || 'مصروفات متنوعة',
+            amount: h.expenses.amount,
+            caseTitle: c?.title,
+            clientName: clients && Array.isArray(clients) ? clients.find(cl => cl.id === c?.clientId)?.name : undefined,
+            paidBy: h.expenses.paidBy === 'lawyer' ? 'المكتب' : 'الموكل'
+          });
+        }
+      });
+    }
+    
+    return expenseCategories.map(category => {
+      const categoryExpenses = allExpenses.filter(exp => {
+        const expDate = new Date(exp.date);
+        return exp.category === category.id && 
+               expDate.getMonth() === currentMonth && 
+               expDate.getFullYear() === currentYear;
+      });
+      
+      const totalSpent = categoryExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+      const budgetRemaining = category.budget - totalSpent;
+      const budgetPercentage = (totalSpent / category.budget) * 100;
+      
+      return {
+        ...category,
+        spent: totalSpent,
+        remaining: budgetRemaining,
+        percentage: budgetPercentage,
+        count: categoryExpenses.length,
+        isOverBudget: budgetRemaining < 0
+      };
+    });
+  }, [cases, hearings, clients, expenseCategories, budgetUpdateKey]);
+
+  const applyTemplate = (template: typeof quickTemplates[0]) => {
+    setTransactionData(prev => ({
+      ...prev,
+      type: template.type,
+      description: template.description,
+      amount: template.amount,
+      category: template.category || ''
+    }));
+  };
 
   // Handle Tab Logic based on Permissions
   useEffect(() => {
@@ -50,6 +413,39 @@ const Fees: React.FC<FeesProps> = ({ cases, clients, hearings, onUpdateCase, can
   }, [canViewIncome, canViewExpenses]);
 
   // --- Data Aggregation & Logic ---
+
+  // Auto-complete logic
+  const filteredCases = useMemo(() => {
+    if (!caseSearchTerm) return [];
+    return cases.filter(c => {
+      const client = clients.find(cl => cl.id === c.clientId);
+      const searchText = caseSearchTerm.toLowerCase();
+      return (
+        c.title.toLowerCase().includes(searchText) ||
+        c.caseNumber.toLowerCase().includes(searchText) ||
+        (client?.name.toLowerCase().includes(searchText) || false)
+      );
+    }).slice(0, 5); // Limit to 5 suggestions
+  }, [cases, clients, caseSearchTerm]);
+
+  const getDescriptionSuggestions = useMemo(() => {
+    const allDescriptions = cases.flatMap(c => 
+      c.finance?.history?.map(h => h.description).filter(Boolean) || []
+    );
+    const uniqueDescriptions = [...new Set(allDescriptions)];
+    return uniqueDescriptions.filter(desc => 
+      desc.toLowerCase().includes(transactionData.description.toLowerCase())
+    ).slice(0, 3);
+  }, [cases, transactionData.description]);
+
+  // Update description suggestions when description changes
+  useEffect(() => {
+    if (transactionData.description.length > 0) {
+      setDescriptionSuggestions(getDescriptionSuggestions);
+    } else {
+      setDescriptionSuggestions([]);
+    }
+  }, [transactionData.description, getDescriptionSuggestions]);
 
   // 1. Financial Stats
   const stats = useMemo(() => {
@@ -230,6 +626,9 @@ const Fees: React.FC<FeesProps> = ({ cases, clients, hearings, onUpdateCase, can
 
       setIsTransactionModalOpen(false);
       setTransactionData({ caseId: '', amount: 0, type: 'payment', description: '', method: 'cash', category: '' });
+      setCaseSearchTerm('');
+      setDescriptionSuggestions([]);
+      setShowCaseSuggestions(false);
       
       // Show success message
       const successMsg = transactionData.type === 'payment' ? 'تم إضافة الدفعة بنجاح!' : 'تم تسجيل المصروف بنجاح!';
@@ -243,12 +642,29 @@ const Fees: React.FC<FeesProps> = ({ cases, clients, hearings, onUpdateCase, can
   const openTransactionModal = (caseId?: string) => {
     if (caseId) {
        setTransactionData(prev => ({ ...prev, caseId }));
+       // Set case search term to show selected case
+       const selectedCase = cases.find(c => c.id === caseId);
+       const client = selectedCase ? clients.find(cl => cl.id === selectedCase.clientId) : null;
+       if (selectedCase && client) {
+         setCaseSearchTerm(`${selectedCase.title} - ${client.name}`);
+       }
     }
     // Default to 'expense' if user has no income permission
     if (!canViewIncome) {
        setTransactionData(prev => ({ ...prev, type: 'expense' }));
     }
     setIsTransactionModalOpen(true);
+  };
+
+  const handleCaseSelect = (caseId: string, caseTitle: string, clientName: string) => {
+    setTransactionData(prev => ({ ...prev, caseId }));
+    setCaseSearchTerm(`${caseTitle} - ${clientName}`);
+    setShowCaseSuggestions(false);
+  };
+
+  const handleDescriptionSelect = (description: string) => {
+    setTransactionData(prev => ({ ...prev, description }));
+    setDescriptionSuggestions([]);
   };
 
   const getMethodIcon = (method: string) => {
@@ -326,14 +742,22 @@ ${typeLabel}
 
   // --- Render Components ---
 
-  const renderStatCard = (title: string, value: number, icon: any, colorClass: string, subValue?: string) => (
-    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-      <div>
+  const renderStatCard = (title: string, value: number, icon: any, colorClass: string, subValue?: string, trend?: { value: number, isPositive: boolean }) => (
+    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex items-center justify-between hover:shadow-md transition-all group">
+      <div className="flex-1">
         <p className="text-sm text-slate-500 dark:text-slate-400 font-bold mb-1">{title}</p>
-        <h3 className={`text-2xl font-bold ${colorClass}`}>{value.toLocaleString()} <span className="text-xs text-slate-400">ج.م</span></h3>
+        <h3 className={`text-2xl font-bold ${colorClass} group-hover:scale-105 transition-transform`}>{value.toLocaleString()} <span className="text-xs text-slate-400">ج.م</span></h3>
         {subValue && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{subValue}</p>}
+        {trend && (
+           <div className={`flex items-center gap-1 mt-2 text-xs font-bold ${
+              trend.isPositive ? 'text-emerald-600' : 'text-red-600'
+           }`}>
+              {trend.isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+              {trend.value > 0 ? '+' : ''}{trend.value}%
+           </div>
+        )}
       </div>
-      <div className={`p-3 rounded-full ${colorClass.replace('text-', 'bg-').replace('700', '100').replace('600', '100')} ${colorClass}`}>
+      <div className={`p-3 rounded-full ${colorClass.replace('text-', 'bg-').replace('700', '100').replace('600', '100')} ${colorClass} group-hover:scale-110 transition-transform`}>
         {React.createElement(icon, { className: "w-6 h-6" })}
       </div>
     </div>
@@ -372,24 +796,24 @@ ${typeLabel}
 
               {/* Summary Cards inside Modal - Show only if income permission exists */}
               {canViewIncome && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
-                   <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 p-4 sm:p-6 bg-white dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700">
+                   <div className="bg-blue-50 dark:bg-blue-900/20 p-3 sm:p-4 rounded-xl border border-blue-100 dark:border-blue-800 text-center">
                       <p className="text-xs text-blue-600 dark:text-blue-400 font-bold mb-1">إجمالي الأتعاب</p>
-                      <p className="text-lg font-bold text-blue-900 dark:text-blue-200">{c.finance?.agreedFees.toLocaleString()}</p>
+                      <p className="text-base sm:text-lg font-bold text-blue-900 dark:text-blue-200">{c.finance?.agreedFees.toLocaleString()}</p>
                    </div>
-                   <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-xl border border-green-100 dark:border-green-800 text-center">
+                   <div className="bg-green-50 dark:bg-green-900/20 p-3 sm:p-4 rounded-xl border border-green-100 dark:border-green-800 text-center">
                       <p className="text-xs text-green-600 dark:text-green-400 font-bold mb-1">المدفوع</p>
-                      <p className="text-lg font-bold text-green-900 dark:text-green-200">{totalPaid.toLocaleString()}</p>
+                      <p className="text-base sm:text-lg font-bold text-green-900 dark:text-green-200">{totalPaid.toLocaleString()}</p>
                    </div>
-                   <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 text-center relative overflow-hidden">
+                   <div className="bg-indigo-50 dark:bg-indigo-900/20 p-3 sm:p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 text-center relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-2 h-2 bg-indigo-500 rounded-bl-full"></div>
                       <p className="text-xs text-indigo-600 dark:text-indigo-400 font-bold mb-1">صافي الدخل</p>
-                      <p className="text-lg font-bold text-indigo-900 dark:text-indigo-200">{netIncome.toLocaleString()}</p>
-                      <p className="text-[10px] text-indigo-400 mt-1">بعد خصم المصروفات ({totalExpenses.toLocaleString()})</p>
+                      <p className="text-base sm:text-lg font-bold text-indigo-900 dark:text-indigo-200">{netIncome.toLocaleString()}</p>
+                      <p className="text-[10px] text-indigo-400 mt-1 hidden sm:block">بعد خصم المصروفات ({totalExpenses.toLocaleString()})</p>
                    </div>
-                   <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-100 dark:border-red-800 text-center">
+                   <div className="bg-red-50 dark:bg-red-900/20 p-3 sm:p-4 rounded-xl border border-red-100 dark:border-red-800 text-center">
                       <p className="text-xs text-red-600 dark:text-red-400 font-bold mb-1">المتبقي</p>
-                      <p className="text-lg font-bold text-red-900 dark:text-red-200">{((c.finance?.agreedFees||0) - totalPaid).toLocaleString()}</p>
+                      <p className="text-base sm:text-lg font-bold text-red-900 dark:text-red-200">{((c.finance?.agreedFees||0) - totalPaid).toLocaleString()}</p>
                    </div>
                 </div>
               )}
@@ -595,21 +1019,48 @@ ${typeLabel}
                تصدير تقرير
              </button>
            )}
+           {canViewExpenses && (
+             <button 
+               onClick={() => {
+                 // Generate expense report
+                 const reportData: any = {
+                   month: new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }),
+                   categories: monthlyExpenses,
+                   totalBudget: monthlyExpenses.reduce((sum, cat) => sum + cat.budget, 0),
+                   totalSpent: monthlyExpenses.reduce((sum, cat) => sum + cat.spent, 0),
+                   totalRemaining: monthlyExpenses.reduce((sum, cat) => sum + cat.remaining, 0)
+                 };
+                 
+                 const reportText = `
+📊 تقرير المصروفات الشهرية\n\n📅 الشهر: ${reportData.month}\n\n💰 إجمالي الميزانية: ${reportData.totalBudget.toLocaleString()} ج.م\n💸 إجمالي المصروف: ${reportData.totalSpent.toLocaleString()} ج.م\n💎 صافي المتبقي: ${reportData.totalRemaining.toLocaleString()} ج.م\n\n📋 تفصيل المصروفات:\n${reportData.categories.map(cat => 
+   `  ${cat.icon} ${cat.name}: ${cat.spent.toLocaleString()} ج.م (من ${cat.budget.toLocaleString()}) - ${cat.percentage.toFixed(1)}%`
+ ).join('\n')}\n\n⚠️ ${reportData.categories.filter(cat => cat.isOverBudget).length > 0 ? 'تنبيه: هناك مصروفات تتجاوز الميزانية المحددة!' : 'جميع المصروفات ضمن الميزانية'}\n                 `;
+                 
+                 // Copy to clipboard
+                 navigator.clipboard.writeText(reportText);
+                 alert('تم نسخ تقرير المصروفات إلى الحافظة!');
+               }}
+               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors flex items-center gap-2"
+               title="نسخ تقرير المصروفات"
+             >
+               <FileText className="w-4 h-4" /> تقرير المصروفات
+             </button>
+           )}
         </div>
       </div>
 
       {/* 2. Dashboard Stats (Hide completely if only Expenses) */}
       {canViewIncome ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {renderStatCard('إجمالي الأتعاب المتفق عليها', stats.totalAgreed, TrendingUp, 'text-slate-700 dark:text-slate-300', 'قيمة العقود المسجلة')}
-          {renderStatCard('إجمالي المحصل', stats.totalCollected, ArrowDownLeft, 'text-emerald-600', `نسبة التحصيل: ${stats.collectionRate}%`)}
-          {renderStatCard('مستحقات (ديون)', stats.totalPending, AlertCircle, 'text-red-600 dark:text-red-400', 'أتعاب لم يتم تحصيلها')}
-          {renderStatCard('صافي الدخل', stats.netIncome, Calculator, 'text-indigo-600 dark:text-indigo-400', `بعد خصم المصروفات (${stats.totalExpenses.toLocaleString()})`)}
+          {renderStatCard('إجمالي الأتعاب المتفق عليها', stats.totalAgreed, TrendingUp, 'text-slate-700 dark:text-slate-300', 'قيمة العقود المسجلة', { value: 12, isPositive: true })}
+          {renderStatCard('إجمالي المحصل', stats.totalCollected, ArrowDownLeft, 'text-emerald-600', `نسبة التحصيل: ${stats.collectionRate}%`, { value: 8, isPositive: true })}
+          {renderStatCard('مستحقات (ديون)', stats.totalPending, AlertCircle, 'text-red-600 dark:text-red-400', 'أتعاب لم يتم تحصيلها', { value: -5, isPositive: false })}
+          {renderStatCard('صافي الدخل', stats.netIncome, Calculator, 'text-indigo-600 dark:text-indigo-400', `بعد خصم المصروفات (${stats.totalExpenses.toLocaleString()})`, { value: 15, isPositive: true })}
         </div>
       ) : (
         /* Only Expense Stats */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-           {renderStatCard('إجمالي المصروفات', stats.totalExpenses, ArrowUpRight, 'text-red-600 dark:text-red-400', 'نثريات، انتقالات، ورسوم')}
+           {renderStatCard('إجمالي المصروفات', stats.totalExpenses, ArrowUpRight, 'text-red-600 dark:text-red-400', 'نثريات، انتقالات، ورسوم', { value: 3, isPositive: false })}
         </div>
       )}
 
@@ -664,151 +1115,525 @@ ${typeLabel}
            )}
         </div>
 
-        {/* Tab Content: Cases Financials */}
+        {/* Tab Content: Cases Financials - Mobile Cards */}
         {activeTab === 'overview' && canViewIncome && (
-           <div className="overflow-x-auto">
-              <table className="w-full text-right text-sm">
-                 <thead className="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold">
-                    <tr>
-                       <th className="p-4">القضية / الموكل</th>
-                       <th className="p-4">إجمالي الأتعاب</th>
-                       <th className="p-4 w-1/4">موقف السداد</th>
-                       <th className="p-4">المدفوع</th>
-                       <th className="p-4">المتبقي</th>
-                       <th className="p-4">الإجراءات</th>
-                    </tr>
-                 </thead>
-                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-slate-800 dark:text-slate-200">
-                    {casesFinancials.map(c => (
-                       <tr key={c.id} onClick={() => setSelectedCaseForDetails(c.id)} className="hover:bg-slate-50 dark:hover:bg-slate-700 group cursor-pointer transition-colors">
-                          <td className="p-4">
-                             <div className="font-bold text-slate-800 dark:text-slate-200 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{c.title}</div>
-                             <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
-                                <User className="w-3 h-3" /> {c.clientName}
-                             </div>
-                          </td>
-                          <td className="p-4 font-bold text-slate-700 dark:text-slate-300">{c.financials.agreed.toLocaleString()}</td>
-                          <td className="p-4">
-                             <div className="w-full bg-slate-200 dark:bg-slate-600 h-2.5 rounded-full overflow-hidden mb-1">
-                                <div 
-                                   className={`h-full rounded-full ${c.financials.status === 'completed' ? 'bg-emerald-500' : c.financials.percentage < 50 ? 'bg-red-500' : 'bg-amber-500'}`} 
-                                   style={{ width: `${c.financials.percentage}%` }}
-                                ></div>
-                             </div>
-                             <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
-                                <span>{Math.round(c.financials.percentage)}%</span>
-                                <span>{c.financials.status === 'completed' ? 'مكتمل' : 'جاري'}</span>
-                             </div>
-                          </td>
-                          <td className="p-4 text-emerald-700 dark:text-emerald-400 font-bold">{c.financials.paid.toLocaleString()}</td>
-                          <td className={`p-4 font-bold ${c.financials.remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}`}>
-                             {c.financials.remaining > 0 ? c.financials.remaining.toLocaleString() : '0'}
-                          </td>
-                          <td className="p-4">
-                             <button 
-                               onClick={(e) => { e.stopPropagation(); openTransactionModal(c.id); }}
-                               className="text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 p-2 rounded-lg transition-colors flex items-center gap-1 font-bold text-xs"
-                             >
-                                <Plus className="w-3 h-3" /> إضافة دفعة
-                             </button>
-                          </td>
+           <div className="p-4 space-y-4">
+              {/* Desktop Table View */}
+              <div className="hidden lg:block overflow-x-auto">
+                 <table className="w-full text-right text-sm">
+                    <thead className="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold">
+                       <tr>
+                          <th className="p-4">القضية / الموكل</th>
+                          <th className="p-4">إجمالي الأتعاب</th>
+                          <th className="p-4 w-1/4">موقف السداد</th>
+                          <th className="p-4">المدفوع</th>
+                          <th className="p-4">المتبقي</th>
+                          <th className="p-4">الإجراءات</th>
                        </tr>
-                    ))}
-                    {casesFinancials.length === 0 && (
-                       <tr><td colSpan={6} className="p-8 text-center text-slate-400 dark:text-slate-500">لا توجد سجلات مطابقة</td></tr>
-                    )}
-                 </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-slate-800 dark:text-slate-200">
+                       {casesFinancials.map(c => (
+                          <tr key={c.id} onClick={() => setSelectedCaseForDetails(c.id)} className="hover:bg-slate-50 dark:hover:bg-slate-700 group cursor-pointer transition-colors">
+                             <td className="p-4">
+                                <div className="font-bold text-slate-800 dark:text-slate-200 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{c.title}</div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+                                   <User className="w-3 h-3" /> {c.clientName}
+                                </div>
+                             </td>
+                             <td className="p-4 font-bold text-slate-700 dark:text-slate-300">{c.financials.agreed.toLocaleString()}</td>
+                             <td className="p-4">
+                                <div className="w-full bg-slate-200 dark:bg-slate-600 h-2.5 rounded-full overflow-hidden mb-1">
+                                   <div 
+                                      className={`h-full rounded-full ${c.financials.status === 'completed' ? 'bg-emerald-500' : c.financials.percentage < 50 ? 'bg-red-500' : 'bg-amber-500'}`} 
+                                      style={{ width: `${c.financials.percentage}%` }}
+                                   ></div>
+                                </div>
+                                <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                                   <span>{Math.round(c.financials.percentage)}%</span>
+                                   <span>{c.financials.status === 'completed' ? 'مكتمل' : 'جاري'}</span>
+                                </div>
+                             </td>
+                             <td className="p-4 text-emerald-700 dark:text-emerald-400 font-bold">{c.financials.paid.toLocaleString()}</td>
+                             <td className={`p-4 font-bold ${c.financials.remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}`}>
+                                {c.financials.remaining > 0 ? c.financials.remaining.toLocaleString() : '0'}
+                             </td>
+                             <td className="p-4">
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); openTransactionModal(c.id); }}
+                                  className="text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 p-2 rounded-lg transition-colors flex items-center gap-1 font-bold text-xs"
+                                >
+                                   <Plus className="w-3 h-3" /> إضافة دفعة
+                                </button>
+                             </td>
+                          </tr>
+                       ))}
+                       {casesFinancials.length === 0 && (
+                          <tr><td colSpan={6} className="p-8 text-center text-slate-400 dark:text-slate-500">لا توجد سجلات مطابقة</td></tr>
+                       )}
+                    </tbody>
+                 </table>
+              </div>
+
+              {/* Mobile Cards View */}
+              <div className="lg:hidden space-y-3">
+                 {casesFinancials.map(c => (
+                    <div 
+                       key={c.id} 
+                       onClick={() => setSelectedCaseForDetails(c.id)}
+                       className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+                    >
+                       {/* Header */}
+                       <div className="flex justify-between items-start mb-3">
+                          <div className="flex-1">
+                             <h3 className="font-bold text-slate-800 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors text-base">
+                                {c.title}
+                             </h3>
+                             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+                                <User className="w-3 h-3" /> {c.clientName}
+                             </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                             <span className={`text-xs px-2 py-1 rounded-full font-bold ${
+                                c.financials.status === 'completed' 
+                                   ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                   : c.financials.percentage < 50 
+                                   ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                   : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                             }`}>
+                                {c.financials.status === 'completed' ? '✅ مكتمل' : c.financials.percentage < 50 ? '🔴 متأخر' : '⏳ جاري'}
+                             </span>
+                             <span className="text-xs text-slate-400">{Math.round(c.financials.percentage)}%</span>
+                          </div>
+                       </div>
+
+                       {/* Progress Bar */}
+                       <div className="mb-3">
+                          <div className="w-full bg-slate-200 dark:bg-slate-600 h-2 rounded-full overflow-hidden">
+                             <div 
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                   c.financials.status === 'completed' ? 'bg-emerald-500' : 
+                                   c.financials.percentage < 50 ? 'bg-red-500' : 'bg-amber-500'
+                                }`} 
+                                style={{ width: `${c.financials.percentage}%` }}
+                             ></div>
+                          </div>
+                       </div>
+
+                       {/* Financial Details Grid */}
+                       <div className="grid grid-cols-3 gap-3 mb-3">
+                          <div className="text-center p-2 bg-slate-50 dark:bg-slate-700 rounded-lg">
+                             <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">الأتعاب</p>
+                             <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{c.financials.agreed.toLocaleString()}</p>
+                          </div>
+                          <div className="text-center p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg">
+                             <p className="text-xs text-emerald-600 dark:text-emerald-400 font-bold">المدفوع</p>
+                             <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{c.financials.paid.toLocaleString()}</p>
+                          </div>
+                          <div className="text-center p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                             <p className="text-xs text-red-600 dark:text-red-400 font-bold">المتبقي</p>
+                             <p className="text-sm font-bold text-red-700 dark:text-red-400">
+                                {c.financials.remaining > 0 ? c.financials.remaining.toLocaleString() : '0'}
+                             </p>
+                          </div>
+                       </div>
+
+                       {/* Action Button */}
+                       <button 
+                          onClick={(e) => { e.stopPropagation(); openTransactionModal(c.id); }}
+                          className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 px-4 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-colors shadow-sm"
+                       >
+                          <Plus className="w-4 h-4" /> إضافة دفعة جديدة
+                       </button>
+                    </div>
+                 ))}
+                 {casesFinancials.length === 0 && (
+                    <div className="text-center py-12 text-slate-400 dark:text-slate-500">
+                       <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                       <p>لا توجد سجلات مطابقة</p>
+                    </div>
+                 )}
+              </div>
            </div>
         )}
 
-        {/* Tab Content: Expenses */}
+        {/* Tab Content: Expenses - Mobile Cards with Budget Tracking */}
         {activeTab === 'expenses' && canViewExpenses && (
-           <div className="overflow-x-auto">
-              <table className="w-full text-right text-sm">
-                 <thead className="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold">
-                    <tr>
-                       <th className="p-4">التاريخ</th>
-                       <th className="p-4">البند / الوصف</th>
-                       <th className="p-4">نوع المصروف</th>
-                       <th className="p-4">خاص بقضية</th>
-                       <th className="p-4">القيمة</th>
-                       <th className="p-4">جهة الدفع</th>
-                    </tr>
-                 </thead>
-                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-slate-800 dark:text-slate-200">
-                    {expensesList.map((exp: any) => (
-                       <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-700">
-                          <td className="p-4 font-mono text-slate-600 dark:text-slate-400">{exp.date}</td>
-                          <td className="p-4 text-slate-800 dark:text-white">{exp.description}</td>
-                          <td className="p-4"><span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-xs">{exp.category}</span></td>
-                          <td className="p-4">
-                             {exp.caseTitle ? (
-                                <div>
-                                   <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{exp.caseTitle}</div>
-                                   <div className="text-[10px] text-slate-400">{exp.clientName}</div>
-                                </div>
-                             ) : '-'}
-                          </td>
-                          <td className="p-4 font-bold text-red-600 dark:text-red-400">-{exp.amount.toLocaleString()}</td>
-                          <td className="p-4 text-xs font-bold text-slate-500 dark:text-slate-400">{exp.paidBy}</td>
-                       </tr>
+           <div className="p-4 space-y-4">
+              {/* Monthly Budget Overview */}
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-xl p-4 mb-4 border border-indigo-200 dark:border-indigo-800" key={budgetUpdateKey}>
+                 <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-indigo-800 dark:text-indigo-200 flex items-center gap-2">
+                       <Calculator className="w-5 h-5" /> 
+                       الميزانية الشهرية
+                    </h3>
+                    <span className="text-sm text-indigo-600 dark:text-indigo-400">
+                       {new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}
+                    </span>
+                 </div>
+                 
+                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                    {monthlyExpenses.map(category => (
+                       <div 
+                          key={category.id}
+                          className={`p-3 rounded-lg border ${
+                             category.isOverBudget 
+                                ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+                                : category.percentage > 80
+                                ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'
+                          }`}
+                       >
+                          <div className="flex items-center justify-between mb-2">
+                             <div className="flex items-center gap-1">
+                                <span className="text-lg">{category.icon}</span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{category.name}</span>
+                             </div>
+                             <div className="flex items-center gap-2">
+                                {category.isOverBudget && (
+                                   <AlertCircle className="w-4 h-4 text-red-500" />
+                                )}
+                                <button
+                                   onClick={() => startEditingBudget(category.id)}
+                                   className="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 text-xs font-bold flex items-center gap-1"
+                                   title={`تعديل ميزانية ${category.name}`}
+                                >
+                                   <Calculator className="w-3 h-3" />
+                                   تعديل
+                                </button>
+                             </div>
+                          </div>
+                          
+                          <div className="space-y-1">
+                             <div className="flex justify-between text-xs">
+                                <span className="text-slate-500">الميزانية:</span>
+                                {editingBudget === category.id ? (
+                                   <input
+                                      type="number"
+                                      value={tempBudgets[category.id] || category.budget}
+                                      onChange={(e) => setTempBudgets({...tempBudgets, [category.id]: Number(e.target.value)})}
+                                      className="w-20 px-1 py-0.5 text-xs font-bold text-indigo-600 bg-white border border-indigo-300 rounded"
+                                      min="0"
+                                      step="10"
+                                   />
+                                ) : (
+                                   <span className="font-bold">{category.budget.toLocaleString()}</span>
+                                )}
+                             </div>
+                             <div className="flex justify-between text-xs">
+                                <span className="text-slate-500">المصروف:</span>
+                                <span className={`font-bold ${
+                                   category.isOverBudget ? 'text-red-600' : 'text-slate-700'
+                                }`}>{category.spent.toLocaleString()}</span>
+                             </div>
+                             <div className="flex justify-between text-xs">
+                                <span className="text-slate-500">المتبقي:</span>
+                                <span className={`font-bold ${
+                                   category.isOverBudget ? 'text-red-600' : 'text-emerald-600'
+                                }`}>{category.remaining.toLocaleString()}</span>
+                             </div>
+                          </div>
+                          
+                          {/* Progress Bar */}
+                          <div className="mt-2">
+                             <div className="w-full bg-slate-200 dark:bg-slate-600 h-1.5 rounded-full overflow-hidden">
+                                <div 
+                                   className={`h-full rounded-full transition-all duration-500 ${
+                                      category.isOverBudget ? 'bg-red-500' : 
+                                      category.percentage > 80 ? 'bg-amber-500' : 'bg-emerald-500'
+                                   }`} 
+                                   style={{ width: `${Math.min(category.percentage, 100)}%` }}
+                                ></div>
+                             </div>
+                             <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                                <span>{Math.round(category.percentage)}%</span>
+                                <span>{category.count} معاملة</span>
+                                {editingBudget === category.id && (
+                                   <div className="flex gap-1">
+                                      <button
+                                         onClick={() => saveBudget(category.id)}
+                                         className="text-emerald-600 hover:text-emerald-700 text-xs font-bold"
+                                         title="حفظ الميزانية"
+                                      >
+                                         حفظ
+                                      </button>
+                                      <button
+                                         onClick={cancelEditing}
+                                         className="text-slate-500 hover:text-slate-700 text-xs font-bold"
+                                         title="إلغاء"
+                                      >
+                                         إلغاء
+                                      </button>
+                                   </div>
+                                )}
+                             </div>
+                          </div>
+                       </div>
                     ))}
-                    {expensesList.length === 0 && (
-                       <tr><td colSpan={6} className="p-8 text-center text-slate-400 dark:text-slate-500">لا توجد مصروفات مسجلة</td></tr>
-                    )}
-                 </tbody>
-              </table>
+                 </div>
+                 
+                 {/* Budget Summary */}
+                 <div className="mt-4 pt-3 border-t border-indigo-200 dark:border-indigo-800">
+                    <div className="grid grid-cols-3 gap-4 text-center">
+                       <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">إجمالي الميزانية</p>
+                          <p className="text-lg font-bold text-slate-700 dark:text-slate-300">
+                             {monthlyExpenses.reduce((sum, cat) => sum + cat.budget, 0).toLocaleString()}
+                          </p>
+                       </div>
+                       <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">إجمالي المصروف</p>
+                          <p className="text-lg font-bold text-red-600 dark:text-red-400">
+                             {monthlyExpenses.reduce((sum, cat) => sum + cat.spent, 0).toLocaleString()}
+                          </p>
+                       </div>
+                       <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">صافي المتبقي</p>
+                          <p className={`text-lg font-bold ${
+                             monthlyExpenses.reduce((sum, cat) => sum + cat.remaining, 0) < 0 
+                                ? 'text-red-600' : 'text-emerald-600'
+                          }`}>
+                             {monthlyExpenses.reduce((sum, cat) => sum + cat.remaining, 0).toLocaleString()}
+                          </p>
+                       </div>
+                    </div>
+                    
+                    {/* Simple Bar Chart */}
+                    <div className="mt-4">
+                       <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">مؤشر أداء المصروفات</p>
+                       <div className="flex items-end gap-1 h-20">
+                          {monthlyExpenses.map((category, index) => (
+                             <div key={category.id} className="flex-1 flex flex-col items-center">
+                                <div 
+                                   className={`w-full rounded-t transition-all duration-500 ${
+                                      category.isOverBudget ? 'bg-red-500' : 
+                                      category.percentage > 80 ? 'bg-amber-500' : 'bg-emerald-500'
+                                   }`}
+                                   style={{ height: `${Math.min(category.percentage, 100)}%` }}
+                                ></div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 text-center">
+                                   <span className="text-lg">{category.icon}</span>
+                                   <div className="text-[10px]">{Math.round(category.percentage)}%</div>
+                                </div>
+                             </div>
+                          ))}
+                       </div>
+                    </div>
+                 </div>
+              </div>
+              {/* Desktop Table View */}
+              <div className="hidden lg:block overflow-x-auto">
+                 <table className="w-full text-right text-sm">
+                    <thead className="bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold">
+                       <tr>
+                          <th className="p-4">التاريخ</th>
+                          <th className="p-4">البند / الوصف</th>
+                          <th className="p-4">نوع المصروف</th>
+                          <th className="p-4">خاص بقضية</th>
+                          <th className="p-4">القيمة</th>
+                          <th className="p-4">جهة الدفع</th>
+                       </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700 text-slate-800 dark:text-slate-200">
+                       {expensesList.map((exp: any) => (
+                          <tr key={exp.id} className="hover:bg-slate-50 dark:hover:bg-slate-700">
+                             <td className="p-4 font-mono text-slate-600 dark:text-slate-400">{exp.date}</td>
+                             <td className="p-4 text-slate-800 dark:text-white">{exp.description}</td>
+                             <td className="p-4"><span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-xs">{exp.category}</span></td>
+                             <td className="p-4">
+                                {exp.caseTitle ? (
+                                   <div>
+                                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{exp.caseTitle}</div>
+                                      <div className="text-[10px] text-slate-400">{exp.clientName}</div>
+                                   </div>
+                                ) : '-'}
+                             </td>
+                             <td className="p-4 font-bold text-red-600 dark:text-red-400">-{exp.amount.toLocaleString()}</td>
+                             <td className="p-4 text-xs font-bold text-slate-500 dark:text-slate-400">{exp.paidBy}</td>
+                          </tr>
+                       ))}
+                       {expensesList.length === 0 && (
+                          <tr><td colSpan={6} className="p-8 text-center text-slate-400 dark:text-slate-500">لا توجد مصروفات مسجلة</td></tr>
+                       )}
+                    </tbody>
+                 </table>
+              </div>
+
+              {/* Mobile Cards View */}
+              <div className="lg:hidden space-y-3">
+                 {expensesList.map((exp: any) => (
+                    <div 
+                       key={exp.id}
+                       className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 shadow-sm hover:shadow-md transition-all"
+                    >
+                       {/* Header */}
+                       <div className="flex justify-between items-start mb-3">
+                          <div className="flex-1">
+                             <div className="flex items-center gap-2 mb-1">
+                                <span className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-2 py-1 rounded text-xs font-bold">
+                                   {exp.category}
+                                </span>
+                                <span className="text-xs text-slate-400">{exp.date}</span>
+                             </div>
+                             <h4 className="font-bold text-slate-800 dark:text-white text-base">{exp.description}</h4>
+                          </div>
+                          <div className="text-left">
+                             <p className="text-lg font-bold text-red-600 dark:text-red-400">-{exp.amount.toLocaleString()}</p>
+                             <p className="text-xs text-slate-400">ج.م</p>
+                          </div>
+                       </div>
+
+                       {/* Case Info */}
+                       {exp.caseTitle && (
+                          <div className="bg-slate-50 dark:bg-slate-700 rounded-lg p-3 mb-3">
+                             <p className="text-xs text-slate-500 dark:text-slate-400 font-bold mb-1">القضية المرتبطة</p>
+                             <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{exp.caseTitle}</p>
+                             {exp.clientName && (
+                                <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                                   <User className="w-3 h-3" /> {exp.clientName}
+                                </p>
+                             )}
+                          </div>
+                       )}
+
+                       {/* Footer */}
+                       <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                             <div className="w-2 h-2 bg-slate-400 rounded-full"></div>
+                             <span className="text-xs text-slate-500 dark:text-slate-400 font-bold">{exp.paidBy}</span>
+                          </div>
+                          <button 
+                             onClick={() => handlePrintReceipt(exp, { id: exp.id, title: exp.caseTitle || 'مصروفات عامة', clientId: '', clientName: exp.clientName || 'المكتب' } as Case)}
+                             className="text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 p-2 rounded-lg transition-colors"
+                             title="طباعة الإيصال"
+                          >
+                             <Printer className="w-4 h-4" />
+                          </button>
+                       </div>
+                    </div>
+                 ))}
+                 {expensesList.length === 0 && (
+                    <div className="text-center py-12 text-slate-400 dark:text-slate-500">
+                       <ArrowUpRight className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                       <p>لا توجد مصروفات مسجلة</p>
+                    </div>
+                 )}
+              </div>
            </div>
         )}
       </div>
 
-      {/* Transaction Modal (Add New) */}
+      {/* Transaction Modal (Add New) - Mobile Optimized */}
       {isTransactionModalOpen && (
          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md animate-in zoom-in-95 duration-200">
-               <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
+               <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0">
                   <h3 className="font-bold text-lg text-slate-800 dark:text-white">تسجيل معاملة مالية</h3>
-                  <button onClick={() => setIsTransactionModalOpen(false)}><X className="w-5 h-5 text-slate-400 hover:text-red-500" /></button>
+                  <button 
+                     onClick={() => {
+                        setIsTransactionModalOpen(false);
+                        setTransactionData({ caseId: '', amount: 0, type: 'payment', description: '', method: 'cash', category: '' });
+                        setCaseSearchTerm('');
+                        setDescriptionSuggestions([]);
+                        setShowCaseSuggestions(false);
+                     }}
+                     className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400 hover:text-red-500"
+                     title="إغلاق"
+                  >
+                     <X className="w-5 h-5" />
+                  </button>
                </div>
                
-               <form onSubmit={handleTransactionSubmit} className="p-6 space-y-4">
-                  {/* Transaction Type */}
-                  <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg mb-4">
-                     {canViewIncome && (
-                       <button 
-                          type="button" 
-                          onClick={() => setTransactionData({...transactionData, type: 'payment'})}
-                          className={`flex-1 py-2 rounded-md text-sm font-bold flex items-center justify-center gap-2 transition-all ${transactionData.type === 'payment' ? 'bg-white dark:bg-slate-600 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-                       >
-                          <ArrowDownLeft className="w-4 h-4" /> استلام دفعة
-                       </button>
-                     )}
-                     {canViewExpenses && (
-                       <button 
-                          type="button" 
-                          onClick={() => setTransactionData({...transactionData, type: 'expense'})}
-                          className={`flex-1 py-2 rounded-md text-sm font-bold flex items-center justify-center gap-2 transition-all ${transactionData.type === 'expense' ? 'bg-white dark:bg-slate-600 text-red-600 dark:text-red-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-                       >
-                          <ArrowUpRight className="w-4 h-4" /> تسجيل مصروف
-                       </button>
-                     )}
-                  </div>
+               <div className="flex-1 overflow-y-auto">
+                  <form onSubmit={handleTransactionSubmit} className="p-4 space-y-4">
+                     {/* Transaction Type */}
+                     <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+                        {canViewIncome && (
+                          <button 
+                             type="button" 
+                             onClick={() => setTransactionData({...transactionData, type: 'payment'})}
+                             className={`flex-1 py-2 rounded-md text-sm font-bold flex items-center justify-center gap-2 transition-all ${transactionData.type === 'payment' ? 'bg-white dark:bg-slate-600 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                          >
+                             <ArrowDownLeft className="w-4 h-4" /> استلام دفعة
+                          </button>
+                        )}
+                        {canViewExpenses && (
+                          <button 
+                             type="button" 
+                             onClick={() => setTransactionData({...transactionData, type: 'expense'})}
+                             className={`flex-1 py-2 rounded-md text-sm font-bold flex items-center justify-center gap-2 transition-all ${transactionData.type === 'expense' ? 'bg-white dark:bg-slate-600 text-red-600 dark:text-red-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                          >
+                             <ArrowUpRight className="w-4 h-4" /> تسجيل مصروف
+                          </button>
+                        )}
+                     </div>
 
-                  {/* Case Selection */}
-                  <div>
+                     {/* Quick Templates - Separated by Type */}
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                           قوالب سريعة - {transactionData.type === 'payment' ? 'المدفوعات' : 'المصروفات'}
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                           {quickTemplates
+                              .filter(template => template.type === transactionData.type)
+                              .map((template, index) => (
+                                 <button
+                                    key={index}
+                                    type="button"
+                                    onClick={() => applyTemplate(template)}
+                                    className={`p-2 rounded-lg text-xs font-bold transition-all ${
+                                       template.type === 'payment' 
+                                          ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                                          : 'bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800'
+                                    }`}
+                                 >
+                                    <div className="font-bold">{template.description}</div>
+                                    <div className="text-xs opacity-75">{template.amount.toLocaleString()} ج.م</div>
+                                 </button>
+                              ))}
+                        </div>
+                     </div>
+
+                  {/* Case Selection with Auto-complete */}
+                  <div className="relative">
                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">القضية الخاصة بالمعاملة *</label>
-                     <select 
+                     <input 
+                        type="text"
                         required
-                        className="w-full border border-slate-300 dark:border-slate-600 p-2 rounded-lg bg-white dark:bg-slate-700 dark:text-white focus:outline-none focus:border-emerald-500"
-                        value={transactionData.caseId}
-                        onChange={e => setTransactionData({...transactionData, caseId: e.target.value})}
-                     >
-                        <option value="">اختر القضية...</option>
-                        {cases.map(c => (
-                           <option key={c.id} value={c.id}>{c.title} - {clients.find(cl=>cl.id===c.clientId)?.name}</option>
-                        ))}
-                     </select>
+                        className="w-full border border-slate-300 dark:border-slate-600 p-3 rounded-lg bg-white dark:bg-slate-700 dark:text-white focus:outline-none focus:border-emerald-500"
+                        value={caseSearchTerm}
+                        onChange={(e) => {
+                          setCaseSearchTerm(e.target.value);
+                          setShowCaseSuggestions(true);
+                          // Clear caseId if user is typing
+                          if (!e.target.value) {
+                            setTransactionData(prev => ({ ...prev, caseId: '' }));
+                          }
+                        }}
+                        onFocus={() => setShowCaseSuggestions(true)}
+                        placeholder="ابحث عن القضية بالاسم أو رقم القضية أو اسم الموكل..."
+                     />
+                     
+                     {/* Case Suggestions Dropdown */}
+                     {showCaseSuggestions && filteredCases.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                           {filteredCases.map(c => {
+                             const client = clients.find(cl => cl.id === c.clientId);
+                             return (
+                                <button
+                                   key={c.id}
+                                   type="button"
+                                   onClick={() => handleCaseSelect(c.id, c.title, client?.name || '')}
+                                   className="w-full text-right p-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-b-0"
+                                >
+                                   <div className="font-bold text-slate-800 dark:text-white text-sm">{c.title}</div>
+                                   <div className="text-xs text-slate-500 dark:text-slate-400">
+                                      {c.caseNumber} - {client?.name}
+                                   </div>
+                                </button>
+                             );
+                           })}
+                        </div>
+                     )}
                   </div>
 
                   {/* Amount */}
@@ -846,36 +1671,60 @@ ${typeLabel}
                      </div>
                   )}
 
-                  {/* Category (If Expense) */}
+                  {/* Category (If Expense) - Advanced Categories */}
                   {transactionData.type === 'expense' && (
                      <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">بند المصروف *</label>
-                        <select 
-                           required
-                           className="w-full border border-slate-300 dark:border-slate-600 p-2 rounded-lg bg-white dark:bg-slate-700 dark:text-white focus:outline-none focus:border-emerald-500"
-                           value={transactionData.category}
-                           onChange={e => setTransactionData({...transactionData, category: e.target.value})}
-                        >
-                           <option value="">اختر...</option>
-                           <option value="رسوم">رسوم قضائية</option>
-                           <option value="انتقالات">انتقالات</option>
-                           <option value="إدارية">إدارية / نثريات</option>
-                           <option value="تصوير">تصوير</option>
-                           <option value="ضيافة">ضيافة</option>
-                        </select>
+                        <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                           {expenseCategories.map(category => (
+                              <button
+                                 key={category.id}
+                                 type="button"
+                                 onClick={() => setTransactionData({...transactionData, category: category.id})}
+                                 className={`p-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all ${
+                                    transactionData.category === category.id
+                                       ? 'bg-slate-100 dark:bg-slate-700 border-2 border-slate-400 dark:border-slate-500'
+                                       : 'border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                 }`}
+                                 title={`${category.name} - الميزانية: ${category.budget.toLocaleString()} ج.م`}
+                              >
+                                 <span className="text-lg">{category.icon}</span>
+                                 <div className="flex-1 text-right">
+                                    <div className="font-bold">{category.name}</div>
+                                    <div className="text-xs opacity-60">{category.budget.toLocaleString()} ج.م</div>
+                                 </div>
+                              </button>
+                           ))}
+                        </div>
                      </div>
                   )}
 
-                  {/* Description */}
-                  <div>
+                  {/* Description with Auto-complete */}
+                  <div className="relative">
                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">ملاحظات / بيان</label>
                      <input 
                         type="text" 
-                        className="w-full border border-slate-300 dark:border-slate-600 p-2 rounded-lg bg-white dark:bg-slate-700 dark:text-white"
+                        className="w-full border border-slate-300 dark:border-slate-600 p-3 rounded-lg bg-white dark:bg-slate-700 dark:text-white"
                         placeholder={transactionData.type === 'payment' ? 'دفعة من حساب الأتعاب' : 'تفاصيل المصروف'}
                         value={transactionData.description}
                         onChange={e => setTransactionData({...transactionData, description: e.target.value})}
                      />
+                     
+                     {/* Description Suggestions */}
+                     {descriptionSuggestions.length > 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg z-50">
+                           {descriptionSuggestions.map((desc, index) => (
+                              <button
+                                 key={index}
+                                 type="button"
+                                 onClick={() => handleDescriptionSelect(desc)}
+                                 className="w-full text-right p-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-b-0 text-sm"
+                              >
+                                 {desc}
+                              </button>
+                           ))}
+                        </div>
+                     )}
                   </div>
 
                   <button 
@@ -886,6 +1735,7 @@ ${typeLabel}
                      {transactionData.type === 'payment' ? 'إضافة الدفعة' : 'تسجيل المصروف'}
                   </button>
                </form>
+               </div>
             </div>
          </div>
       )}

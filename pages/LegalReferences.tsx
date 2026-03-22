@@ -262,41 +262,41 @@ const LegalReferences: React.FC<LegalReferencesProps> = ({ references, onAddRefe
       />
 
       {/* 1. Header & Search Area */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 transition-colors">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4 sm:p-6 transition-colors">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 sm:mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Library className="w-6 h-6 text-primary-600" />
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+              <Library className="w-5 h-5 sm:w-6 sm:h-6 text-primary-600" />
               المكتبة والمراجع القانونية
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">قاعدة بيانات شاملة للقوانين، الأحكام، والموسوعات</p>
           </div>
           {!readOnly && (
-            <div className="flex gap-2">
+            <div className="flex gap-2 w-full md:w-auto">
                <button 
                 onClick={handleImportClick}
-                className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-600"
+                className="bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-600"
               >
-                <Upload className="w-4 h-4" /> استيراد PDF
+                <Upload className="w-4 h-4" /> <span className="hidden sm:inline">استيراد PDF</span><span className="sm:hidden">استيراد</span>
               </button>
               <button 
                 onClick={() => {
                    setNewRef({ title: '', type: 'law', branch: 'civil', description: '', tags: [] });
                    setIsAddModalOpen(true);
                 }}
-                className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-colors"
+                className="bg-primary-600 hover:bg-primary-700 text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-colors"
               >
-                <Plus className="w-4 h-4" /> إضافة مرجع يدوياً
+                <Plus className="w-4 h-4" /> <span className="hidden sm:inline">إضافة مرجع يدوياً</span><span className="sm:hidden">إضافة</span>
               </button>
             </div>
           )}
         </div>
 
         {/* Search Bar */}
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col md:flex-row gap-4">
+        <div className="flex flex-col gap-3 sm:gap-4">
+          <div className="flex flex-col md:flex-row gap-3 sm:gap-4">
             <div className="flex-1 relative">
-              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+              <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 sm:w-5 sm:h-5" />
               <input
                 type="text"
                 placeholder={searchMode === 'article' ? "ابحث برقم المادة..." : "ابحث باسم القانون، الحكم، أو الكلمات المفتاحية..."}
@@ -449,7 +449,7 @@ const LegalReferences: React.FC<LegalReferencesProps> = ({ references, onAddRefe
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredRefs.map(ref => (
           <div key={ref.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden hover:shadow-md transition-all group flex flex-col">
-            <div className="p-5 flex-1">
+            <div className="p-4 sm:p-5 flex-1">
               <div className="flex justify-between items-start mb-3">
                 <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${getTypeColor(ref.type)}`}>
                   {ref.type === 'law' ? 'قانون' : ref.type === 'ruling' ? 'حكم محكمة' : ref.type === 'encyclopedia' ? 'موسوعة' : 'لائحة'}
@@ -459,43 +459,43 @@ const LegalReferences: React.FC<LegalReferencesProps> = ({ references, onAddRefe
                 </span>
               </div>
               
-              <h3 className="font-bold text-slate-800 dark:text-white text-lg mb-2 line-clamp-2 group-hover:text-primary-600 transition-colors">
+              <h3 className="font-bold text-slate-800 dark:text-white text-base sm:text-lg mb-2 line-clamp-2 group-hover:text-primary-600 transition-colors">
                 {ref.title}
               </h3>
               
-              <p className="text-sm text-slate-600 dark:text-slate-400 mb-4 line-clamp-3 leading-relaxed">
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-3 sm:mb-4 line-clamp-3 leading-relaxed">
                 {ref.description}
               </p>
 
-              <div className="flex flex-wrap gap-2 mb-4">
+              <div className="flex flex-wrap gap-2 mb-3 sm:mb-4">
                 {ref.tags?.map(tag => (
                   <span key={tag} className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 px-2 py-0.5 rounded flex items-center gap-1">
-                    <Tag className="w-3 h-3" /> {tag}
+                    <Tag className="w-3 h-3 flex-shrink-0" /> <span className="truncate">{tag}</span>
                   </span>
                 ))}
               </div>
             </div>
 
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs">
-               <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
-                  {ref.articleNumber && <span className="font-mono bg-white dark:bg-slate-700 px-1.5 rounded border border-slate-200 dark:border-slate-600">مادة {ref.articleNumber}</span>}
-                  {ref.year && <span>سنة {ref.year}</span>}
+            <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-xs">
+               <div className="flex items-center gap-2 sm:gap-3 text-slate-500 dark:text-slate-400">
+                  {ref.articleNumber && <span className="font-mono bg-white dark:bg-slate-700 px-1.5 rounded border border-slate-200 dark:border-slate-600 truncate">مادة {ref.articleNumber}</span>}
+                  {ref.year && <span className="truncate">سنة {ref.year}</span>}
                </div>
                
                <button 
                  onClick={() => setSelectedReference(ref)}
-                 className="text-primary-600 dark:text-primary-400 hover:underline font-bold flex items-center gap-1"
+                 className="text-primary-600 dark:text-primary-400 hover:underline font-bold flex items-center gap-1 whitespace-nowrap"
                >
-                  عرض التفاصيل <ArrowRight className="w-3 h-3" />
+                  <span className="hidden sm:inline">عرض التفاصيل</span><span className="sm:hidden">تفاصيل</span> <ArrowRight className="w-3 h-3" />
                </button>
             </div>
           </div>
         ))}
         
         {filteredRefs.length === 0 && (
-          <div className="col-span-full py-16 text-center text-slate-400 dark:text-slate-500 flex flex-col items-center">
-            <Book className="w-16 h-16 opacity-20 mb-4" />
-            <p className="text-lg font-medium">لا توجد مراجع مطابقة للبحث</p>
+          <div className="col-span-full py-12 sm:py-16 text-center text-slate-400 dark:text-slate-500 flex flex-col items-center">
+            <Book className="w-12 h-12 sm:w-16 sm:h-16 opacity-20 mb-4" />
+            <p className="text-base sm:text-lg font-medium">لا توجد مراجع مطابقة للبحث</p>
             <p className="text-sm">حاول تغيير كلمات البحث أو التصنيفات</p>
           </div>
         )}

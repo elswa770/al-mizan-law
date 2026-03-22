@@ -264,12 +264,15 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
       if (!currentUser?.firmId) {
         console.error('❌ Cannot create client: currentUser or firmId is missing');
         alert('خطأ: لا يمكن إنشاء موكل جديد. يرجى إعادة تحميل الصفحة.');
+        setIsSubmitting(false);
         return;
       }
       if (!formData.name) {
         alert('يرجى إدخال اسم الموكل');
+        setIsSubmitting(false);
         return;
       }
+      setIsSubmitting(false);
       return;
     }
 
@@ -278,6 +281,7 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
       const clientCheck = await SubscriptionService.canAddClient(currentUser.firmId, currentUser.email);
       if (!clientCheck.canAdd) {
         alert(clientCheck.message);
+        setIsSubmitting(false);
         return;
       }
       
@@ -350,6 +354,9 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
        return;
     }
 
+    // Set submitting state to prevent multiple submissions
+    setIsSubmitting(true);
+
     // 1. Conflict of Interest Check
     const newName = formData.name.trim();
     const conflicts: any[] = [];
@@ -371,10 +378,18 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
     if (conflicts.length > 0) {
       setDetectedConflicts(conflicts);
       setIsConflictModalOpen(true);
+      // Reset submitting state since we're showing conflict modal
+      setIsSubmitting(false);
     } else {
       // No conflicts, proceed to save
       saveClientToDatabase();
     }
+  };
+
+  // --- Handle conflict confirmation ---
+  const handleConfirmWithConflicts = () => {
+    setIsSubmitting(true);
+    saveClientToDatabase();
   };
 
   const handleWhatsApp = (phone: string) => {
@@ -388,7 +403,7 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
   // --- Render Functions ---
 
   const renderCardView = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
       {filteredClients.map(client => {
         const stats = getClientCaseStats(client.id);
         const hasDues = stats.totalDues > 0;
@@ -398,19 +413,19 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
              {/* Status Stripe */}
              <div className={`absolute top-0 left-0 w-1 h-full ${client.status === ClientStatus.ACTIVE ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'}`}></div>
              
-             <div className="p-5 pl-7">
+             <div className="p-4 sm:p-5 pl-5 sm:pl-7">
                 {/* Header */}
-                <div className="flex justify-between items-start mb-4">
-                   <div className="flex items-center gap-3">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold shadow-sm ${client.type === ClientType.COMPANY ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-blue-50 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300'}`}>
-                         {client.type === ClientType.COMPANY ? <Building2 className="w-6 h-6" /> : <User className="w-6 h-6" />}
+                <div className="flex justify-between items-start mb-3 sm:mb-4">
+                   <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                      <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-lg font-bold shadow-sm flex-shrink-0 ${client.type === ClientType.COMPANY ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300' : 'bg-blue-50 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300'}`}>
+                         {client.type === ClientType.COMPANY ? <Building2 className="w-4 h-4 sm:w-6 sm:h-6" /> : <User className="w-4 h-4 sm:w-6 sm:h-6" />}
                       </div>
-                      <div>
-                         <h3 className="font-bold text-slate-800 dark:text-white text-lg leading-tight">{client.name}</h3>
-                         <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">{client.type === ClientType.COMPANY ? 'س.ت:' : 'ID:'} {client.nationalId}</span>
+                      <div className="min-w-0 flex-1">
+                         <h3 className="font-bold text-slate-800 dark:text-white text-base sm:text-lg leading-tight truncate">{client.name}</h3>
+                         <span className="text-xs text-slate-500 dark:text-slate-400 font-mono truncate">{client.type === ClientType.COMPANY ? 'س.ت:' : 'ID:'} {client.nationalId}</span>
                       </div>
                    </div>
-                   <div className="flex flex-col items-end gap-1">
+                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${client.status === ClientStatus.ACTIVE ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'}`}>
                          {client.status}
                       </span>
@@ -418,14 +433,14 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
                 </div>
 
                 {/* Stats Grid */}
-                <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-3 sm:mb-4">
                    <div className="bg-slate-50 dark:bg-slate-700 p-2 rounded-lg border border-slate-100 dark:border-slate-600">
                       <p className="text-xs text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-1"><FileText className="w-3 h-3"/> القضايا</p>
-                      <p className="font-bold text-slate-800 dark:text-white">{stats.activeCases} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">/ {stats.totalCases}</span></p>
+                      <p className="font-bold text-slate-800 dark:text-white text-sm">{stats.activeCases} <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">/ {stats.totalCases}</span></p>
                    </div>
                    <div className={`p-2 rounded-lg border ${hasDues ? 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 border-green-100 dark:border-green-800'}`}>
                       <p className={`text-xs mb-1 flex items-center gap-1 ${hasDues ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}><DollarSign className="w-3 h-3"/> المستحقات</p>
-                      <p className={`font-bold ${hasDues ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'}`}>{stats.totalDues > 0 ? stats.totalDues.toLocaleString() : 'خالص'}</p>
+                      <p className={`font-bold text-sm ${hasDues ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'}`}>{stats.totalDues > 0 ? stats.totalDues.toLocaleString() : 'خالص'}</p>
                    </div>
                 </div>
 
@@ -460,49 +475,59 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
 
   const renderTableView = () => (
     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-       <table className="w-full text-right text-sm">
-          <thead className="bg-slate-50 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300">
-             <tr>
-                <th className="p-4">الموكل</th>
-                <th className="p-4">رقم التعريف</th>
-                <th className="p-4">الهاتف</th>
-                <th className="p-4">الحالة</th>
-                <th className="p-4">القضايا (نشط/كلي)</th>
-                <th className="p-4">المديونية</th>
-                <th className="p-4">الإجراءات</th>
-             </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-             {filteredClients.map(client => {
-                const stats = getClientCaseStats(client.id);
-                return (
-                   <tr key={client.id} className="hover:bg-slate-50 dark:hover:bg-slate-700 group text-slate-800 dark:text-slate-200">
-                      <td className="p-4 font-bold flex items-center gap-2">
-                         {client.type === ClientType.COMPANY ? <Building2 className="w-4 h-4 text-slate-400"/> : <User className="w-4 h-4 text-slate-400"/>}
-                         {client.name}
-                      </td>
-                      <td className="p-4 font-mono text-slate-500 dark:text-slate-400">{client.nationalId}</td>
-                      <td className="p-4 text-slate-600 dark:text-slate-400" dir="ltr">{client.phone}</td>
-                      <td className="p-4">
-                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${client.status === ClientStatus.ACTIVE ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
-                            {client.status}
-                         </span>
-                      </td>
-                      <td className="p-4 text-center">
-                         <span className="font-bold">{stats.activeCases}</span>
-                         <span className="text-slate-400 dark:text-slate-500 text-xs"> / {stats.totalCases}</span>
-                      </td>
-                      <td className="p-4 font-bold text-red-600 dark:text-red-400">
-                         {stats.totalDues > 0 ? stats.totalDues.toLocaleString() : '-'}
-                      </td>
-                      <td className="p-4">
-                         <button onClick={() => onClientClick(client.id)} className="text-primary-600 dark:text-primary-400 hover:underline font-bold text-xs">عرض الملف</button>
-                      </td>
+       <div className="overflow-x-auto -mx-4 sm:mx-0">
+          <table className="w-full text-right text-sm min-w-[600px] sm:min-w-full">
+             <thead className="bg-slate-50 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300">
+                <tr>
+                   <th className="p-2 sm:p-4 text-right">الموكل</th>
+                   <th className="p-2 sm:p-4 text-right hidden sm:table-cell">رقم التعريف</th>
+                   <th className="p-2 sm:p-4 text-right hidden md:table-cell">الهاتف</th>
+                   <th className="p-2 sm:p-4 text-right">الحالة</th>
+                   <th className="p-2 sm:p-4 text-right hidden sm:table-cell">القضايا</th>
+                   <th className="p-2 sm:p-4 text-right hidden lg:table-cell">المديونية</th>
+                   <th className="p-2 sm:p-4 text-right">الإجراءات</th>
+                </tr>
+             </thead>
+             <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                {filteredClients.map(client => {
+                   const stats = getClientCaseStats(client.id);
+                   return (
+                      <tr key={client.id} className="hover:bg-slate-50 dark:hover:bg-slate-700 group text-slate-800 dark:text-slate-200">
+                         <td className="p-2 sm:p-4 font-bold">
+                            <div className="flex items-center gap-2 min-w-0">
+                               {client.type === ClientType.COMPANY ? <Building2 className="w-4 h-4 text-slate-400 flex-shrink-0"/> : <User className="w-4 h-4 text-slate-400 flex-shrink-0"/>}
+                               <span className="truncate">{client.name}</span>
+                            </div>
+                            <div className="flex flex-col sm:hidden text-xs text-slate-400 mt-1">
+                               <div>رقم: {client.nationalId}</div>
+                               <div>هاتف: {client.phone}</div>
+                               <div>قضايا: {stats.activeCases}/{stats.totalCases}</div>
+                               {stats.totalDues > 0 && <div>مديونية: {stats.totalDues.toLocaleString()}</div>}
+                            </div>
+                         </td>
+                         <td className="p-2 sm:p-4 font-mono text-slate-500 dark:text-slate-400 hidden sm:table-cell">{client.nationalId}</td>
+                         <td className="p-2 sm:p-4 text-slate-600 dark:text-slate-400 hidden md:table-cell" dir="ltr">{client.phone}</td>
+                         <td className="p-2 sm:p-4">
+                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${client.status === ClientStatus.ACTIVE ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>
+                               {client.status}
+                            </span>
+                         </td>
+                         <td className="p-2 sm:p-4 text-center hidden sm:table-cell">
+                            <span className="font-bold">{stats.activeCases}</span>
+                            <span className="text-slate-400 dark:text-slate-500 text-xs"> / {stats.totalCases}</span>
+                         </td>
+                         <td className="p-2 sm:p-4 font-bold text-red-600 dark:text-red-400 hidden lg:table-cell">
+                            {stats.totalDues > 0 ? stats.totalDues.toLocaleString() : '-'}
+                         </td>
+                         <td className="p-2 sm:p-4">
+                            <button onClick={() => onClientClick(client.id)} className="text-primary-600 dark:text-primary-400 hover:underline font-bold text-xs whitespace-nowrap">عرض الملف</button>
+                         </td>
                    </tr>
                 )
              })}
           </tbody>
        </table>
+       </div>
     </div>
   );
 
@@ -796,10 +821,20 @@ const Clients: React.FC<ClientsProps> = ({ clients, cases, hearings, currentUser
                      إلغاء وإعادة التدقيق
                   </button>
                   <button 
-                     onClick={saveClientToDatabase}
-                     className="px-4 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-md shadow-red-200 dark:shadow-none"
+                     onClick={handleConfirmWithConflicts}
+                     disabled={isSubmitting}
+                     className="px-4 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-md shadow-red-200 dark:shadow-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   >
-                     تجاهل التحذير وحفظ
+                     {isSubmitting ? (
+                       <>
+                         <div className="w-4 h-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                         جاري الحفظ...
+                       </>
+                     ) : (
+                       <>
+                         تجاهل التحذير وحفظ
+                       </>
+                     )}
                   </button>
                </div>
             </div>

@@ -23,14 +23,14 @@ interface DashboardProps {
 }
 
 const StatCard = ({ title, value, subtext, icon: Icon, color, onClick }: { title: string, value: string | number, subtext?: string, icon: any, color: string, onClick?: () => void }) => (
-  <div onClick={onClick} className={`bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex items-center gap-4 transition-all hover:-translate-y-1 duration-300 group cursor-pointer hover:shadow-md`}>
-    <div className={`p-4 rounded-full ${color} bg-opacity-10 dark:bg-opacity-20 group-hover:bg-opacity-20 dark:group-hover:bg-opacity-30 transition-colors`}>
-      <Icon className={`w-8 h-8 ${color.replace('bg-', 'text-')}`} />
+  <div onClick={onClick} className={`bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex items-center gap-3 sm:gap-4 transition-all hover:-translate-y-1 duration-300 group cursor-pointer hover:shadow-md`}>
+    <div className={`p-3 sm:p-4 rounded-full ${color} bg-opacity-10 dark:bg-opacity-20 group-hover:bg-opacity-20 dark:group-hover:bg-opacity-30 transition-colors flex-shrink-0`}>
+      <Icon className={`w-6 h-6 sm:w-8 sm:h-8 ${color.replace('bg-', 'text-')}`} />
     </div>
-    <div>
-      <p className="text-sm text-slate-500 dark:text-slate-400 font-bold mb-1">{title}</p>
-      <h3 className="text-2xl font-bold text-slate-800 dark:text-white leading-none">{value}</h3>
-      {subtext && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{subtext}</p>}
+    <div className="min-w-0 flex-1">
+      <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-bold mb-1 truncate">{title}</p>
+      <h3 className="text-lg sm:text-2xl font-bold text-slate-800 dark:text-white leading-none truncate">{value}</h3>
+      {subtext && <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 truncate">{subtext}</p>}
     </div>
   </div>
 );
@@ -394,34 +394,36 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
                   {todayHearings.length > 0 ? todayHearings.map(h => {
                      const c = cases.find(c => c.id === h.caseId);
                      return (
-                        <div key={h.id} className="p-4 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-between group">
-                           <div className="flex items-center gap-4">
-                              <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-mono text-sm px-2 py-1 rounded font-bold">
-                                 {h.time || '09:00'}
+                        <div key={h.id} className="p-3 sm:p-4 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0 flex-1">
+                                 <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-mono text-sm px-2 py-1 rounded font-bold flex-shrink-0">
+                                    {h.time || '09:00'}
+                                 </div>
+                                 <div className="min-w-0 flex-1">
+                                    <h4 className="font-bold text-slate-800 dark:text-white text-sm cursor-pointer hover:text-primary-600 dark:hover:text-primary-400 truncate" onClick={() => c && onCaseClick && onCaseClick(c.id)}>{c?.title || 'قضية'}</h4>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{c?.court} • {c?.caseNumber}</p>
+                                 </div>
                               </div>
-                              <div>
-                                 <h4 className="font-bold text-slate-800 dark:text-white text-sm cursor-pointer hover:text-primary-600 dark:hover:text-primary-400" onClick={() => c && onCaseClick && onCaseClick(c.id)}>{c?.title || 'قضية'}</h4>
-                                 <p className="text-xs text-slate-500 dark:text-slate-400">{c?.court} • {c?.caseNumber}</p>
-                              </div>
+                              {!readOnly && (
+                                <div className="flex items-center gap-2">
+                                   <button 
+                                      onClick={() => handlePostponeHearing(h)}
+                                      className="px-2 sm:px-3 py-1 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-white whitespace-nowrap"
+                                      title="تأجيل الجلسة ليوم آخر"
+                                   >
+                                      تأجيل
+                                   </button>
+                                   <button 
+                                      onClick={() => handleRecordDecision(h)}
+                                      className="px-2 sm:px-3 py-1 bg-amber-600 text-white rounded text-xs font-bold hover:bg-amber-700 whitespace-nowrap"
+                                      title="تسجيل قرار الجلسة"
+                                   >
+                                      تسجيل قرار
+                                   </button>
+                                </div>
+                              )}
                            </div>
-                           {!readOnly && (
-                             <div className="flex items-center gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button 
-                                  onClick={() => handlePostponeHearing(h)}
-                                  className="px-3 py-1 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-600 text-slate-700 dark:text-white"
-                                  title="تأجيل الجلسة ليوم آخر"
-                                >
-                                  تأجيل
-                                </button>
-                                <button 
-                                  onClick={() => handleRecordDecision(h)}
-                                  className="px-3 py-1 bg-amber-600 text-white rounded text-xs font-bold hover:bg-amber-700"
-                                  title="تسجيل قرار الجلسة"
-                                >
-                                  تسجيل قرار
-                                </button>
-                             </div>
-                           )}
                         </div>
                      )
                   }) : (
@@ -559,21 +561,21 @@ const Dashboard: React.FC<DashboardProps> = ({ cases, clients, hearings, appoint
             
             {/* Quick Actions (Hide if ReadOnly) */}
             {!readOnly && (
-               <div className="grid grid-cols-2 gap-3">
-                  <button onClick={() => onNavigate && onNavigate('cases')} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-md transition-all flex flex-col items-center gap-2 group text-center">
-                     <div className="bg-blue-50 dark:bg-blue-900/30 p-2 rounded-full text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors"><Plus className="w-5 h-5" /></div>
+               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <button onClick={() => onNavigate && onNavigate('cases')} className="p-3 sm:p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-md transition-all flex flex-col items-center gap-2 group text-center">
+                     <div className="bg-blue-50 dark:bg-blue-900/30 p-2 sm:p-3 rounded-full text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-colors"><Plus className="w-4 h-4 sm:w-5 sm:h-5" /></div>
                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">قضية جديدة</span>
                   </button>
-                  <button onClick={() => onNavigate && onNavigate('clients')} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-md transition-all flex flex-col items-center gap-2 group text-center">
-                     <div className="bg-indigo-50 dark:bg-indigo-900/30 p-2 rounded-full text-indigo-600 dark:text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-colors"><Users className="w-5 h-5" /></div>
+                  <button onClick={() => onNavigate && onNavigate('clients')} className="p-3 sm:p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-md transition-all flex flex-col items-center gap-2 group text-center">
+                     <div className="bg-indigo-50 dark:bg-indigo-900/30 p-2 sm:p-3 rounded-full text-indigo-600 dark:text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-colors"><Users className="w-4 h-4 sm:w-5 sm:h-5" /></div>
                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">موكل جديد</span>
                   </button>
-                  <button onClick={() => onNavigate && onNavigate('hearings')} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-md transition-all flex flex-col items-center gap-2 group text-center">
-                     <div className="bg-amber-50 dark:bg-amber-900/30 p-2 rounded-full text-amber-600 dark:text-amber-400 group-hover:bg-amber-600 group-hover:text-white transition-colors"><Calendar className="w-5 h-5" /></div>
+                  <button onClick={() => onNavigate && onNavigate('hearings')} className="p-3 sm:p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-md transition-all flex flex-col items-center gap-2 group text-center">
+                     <div className="bg-amber-50 dark:bg-amber-900/30 p-2 sm:p-3 rounded-full text-amber-600 dark:text-amber-400 group-hover:bg-amber-600 group-hover:text-white transition-colors"><Calendar className="w-4 h-4 sm:w-5 sm:h-5" /></div>
                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">إضافة جلسة</span>
                   </button>
-                  <button onClick={handleOpenUpload} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-md transition-all flex flex-col items-center gap-2 group text-center">
-                     <div className="bg-emerald-50 dark:bg-emerald-900/30 p-2 rounded-full text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white transition-colors"><Upload className="w-5 h-5" /></div>
+                  <button onClick={handleOpenUpload} className="p-3 sm:p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-md transition-all flex flex-col items-center gap-2 group text-center">
+                     <div className="bg-emerald-50 dark:bg-emerald-900/30 p-2 sm:p-3 rounded-full text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white transition-colors"><Upload className="w-4 h-4 sm:w-5 sm:h-5" /></div>
                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">رفع مستند</span>
                   </button>
                </div>
